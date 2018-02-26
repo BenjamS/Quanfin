@@ -1,8 +1,7 @@
-#setwd("D:/OneDrive - CGIAR/Documents")
-source('~/slopeOsc.R', echo=TRUE)
-source('~/getBuySellbinryVar.R', echo=TRUE)
-source('~/captureEvents.R', echo=TRUE)
-source('~/getGlobTrnds.R', echo=TRUE)
+setwd("D:/OneDrive - CGIAR/Documents")
+source('./tsSlope.R', echo=TRUE)
+#source('./captureEvents.R', echo=TRUE)
+source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
 library(dplyr)
 library(tidyr)
@@ -16,9 +15,9 @@ library(corrplot)
 library(quantmod)
 library(lubridate)
 
-fromdate<-"2012-01-01"; todate <- "2018-02-02"
+fromdate<-"2012-01-01"; todate <- "2018-02-26"
 getGlobTrnds(fromdate, todate)
-rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN"))
+rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "VXX"))
 xts_cp <- cpgtetfmat[, -rmcol]
 xts_vol <- volgtetfmat[, -rmcol]
 namevec <- colnames(xts_cp)
@@ -49,37 +48,34 @@ for(i in 1:n_ts)
   list_df[[i]] <- out_df
 }
 df_vwma <- join_all(list_df)
-datevec <- df_vwma$Index
 rm_rows <- which(is.na(df_vwma[, 2]))
 df_vwma <- df_vwma[-rm_rows, ]
 datevec <- df_vwma$Index
-#---------------
 df_cp <- fortify(xts_cp[-rm_rows, ])
-df_ma <- df_vwma
-df_cp$Index <- NULL
-df_ma$Index <- NULL
-df_dt <- df_cp - df_ma
-df_dt$Index <- datevec
-#--------
-df_vwma_plot <- df_vwma[, c("Index", "SPY")]
-df_dt_plot <- as.data.frame(df_vwma$SPY - df_cp$SPY)
-colnames(df_dt_plot)[1] <- "SPY"
-df_dt_plot$Index <- datevec
-df_vwma_plot$Index <- as.Date(df_vwma_plot$Index)
+df_dt_vwma <- df_cp[, -1] - df_vwma[, -1]
+#--------------
+df_ema <- as.data.frame(apply(xts_cp, 2, function(x) EMA(x, n = 21)))
+rm_rows <- which(is.na(df_ema[, 2]))
+df_ema <- df_ema[-rm_rows, ]
+df_cp <- fortify(xts_cp[-rm_rows, ])
+df_dt_ema <- df_cp[, -1] - df_ema
+#--------------
+ts <- df_cp$FXI
+ts_diff <- diff(ts, differences = 3)
+df_plot <- data.frame(ts, ts_diff, ts_dt_vwma = df_dt_vwma$FXI, ts_dt_ema = df_dt_ema$FXI)
 
-slopeFun <- function(x){
-  for(s in s_start:s_end)
-  {
-    datseg <- indata[(s-wind):s]
-    q <- polyfit(x, datseg, n=2)
-    #    dydx[s]<-q[1]
-    a2<-q[1];a1<-q[2];a0<-q[3]
-    udydx<-mean(2*a2*x+a1)
-    dydx[s]<-udydx
-    udydx<-c()
-  }
-  
-}
+
+
+sd_diff <- sd(df_out$tsDiff, na.rm = T)
+ind_diffs <- which(abs(df_out$tsDiff) > 3 * sd_diff)
+df_plot <- df_out %>% gather(Series, Value, ts:dydx_sd)
+gg <- ggplot(df_plot, aes(x = Date, y = Value))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = df_out$Date[ind_diffs], color = "green")
+gg <- gg + facet_wrap(~Series, ncol = 1, scales = "free")
+gg
+
+
 
 gg1 <- ggplot(df_vwma_plot, aes(x = Index, y = SPY)) + geom_line()
 gg2 <- ggplot(df_dt_plot, aes(x = Index, y = SPY)) + geom_line()
