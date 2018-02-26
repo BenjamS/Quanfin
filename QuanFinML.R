@@ -1,3 +1,9 @@
+#setwd("D:/OneDrive - CGIAR/Documents")
+source('~/slopeOsc.R', echo=TRUE)
+source('~/getBuySellbinryVar.R', echo=TRUE)
+source('~/captureEvents.R', echo=TRUE)
+source('~/getGlobTrnds.R', echo=TRUE)
+library(plyr)
 library(dplyr)
 library(tidyr)
 library(FactoMineR)
@@ -7,218 +13,415 @@ library(cluster)
 library(mclust)
 library(randomForest)
 library(corrplot)
-
-df_raw <- read.csv("fundamentals.csv", stringsAsFactors = F)
-df_raw$X <- NULL
-colnames(df_raw)[1] <- "Symb"
-#rownames(df_raw)
-#length((df_raw$Period.Ending[grep("2016-09", df_raw$Period.Ending)]))
-
-df_raw_sectInd <- read.csv("securities.csv", stringsAsFactors = F)
-df_raw_sectInd <- df_raw_sectInd[, c("Ticker.symbol", "GICS.Sector", "GICS.Sub.Industry")]
-head(df_raw_sectInd)
-colnames(df_raw_sectInd) <- c("Symb", "Sector", "Industry")
-
-df <- df_raw %>% group_by(Symb) %>% summarize_all(mean)
-df$Period.Ending <- NULL
-df$For.Year <- NULL
-df <- merge(df, df_raw_sectInd, by = "Symb")
-rm(df_raw); gc()
-o <- c()
-for(i in 1:ncol(df)){x <- df[,i]; o[i] <- length(which(is.na(x)))} 
-o
-rmcols <- which(o > 0)
-colnames(df)[rmcols]
-df <- df[, -rmcols]
-rownames(df) <- df$Symb
-df$Symb <- NULL
-df$Sector <- as.factor(df$Sector)
-df$Industry <- as.factor(df$Industry)
-#colnames(df)
-
-
-df_num <- df[, -(which(colnames(df) %in% c("Sector", "Industry")))]
-zdf <- scale(df_num, center=TRUE, scale=TRUE)
-#Is data clusterable? Hopkins statistic must be clost to 0 (much < 0.5).
-get_clust_tendency(df_num, n = 50, gradient = list(low = "steelblue",  high = "white"))
-#get_clust_tendency(zdf, n = 50, gradient = list(low = "steelblue",  high = "white"))
-res <- PCA(df_num, ncp = 5)
-fviz_screeplot(res, ncp=5)
-fviz_pca_ind(res, axes = c(1,2), habillage = df[, "Sector"])#, addEllipses = T, ellipse.level=0.95)
-df_outPCA <- data.frame(coord = res$ind$coord)
-df_outPCApair <- df_outPCA[, c(1:4)]
-ggpairs(df_outPCApair, aes(alpha = 0.4))
-
-# fviz_pca_biplot(res,
-#                 habillage = df[, "Sector"],
-#                 addEllipses = TRUE,
-#                 col.var = "red", alpha.var ="cos2",
-#                 label = "var") +
-#   scale_color_brewer(palette="Dark2")
-#=====================
-
-df_AdjP_Vol <- read.csv("prices-split-adjusted.csv", stringsAsFactors = F)
-head(df_AdjP_Vol)
-class(df_AdjP_Vol)
-colnames(df_AdjP_Vol) <- c("Date", "Symb", "op", "cp", "low", "high", "vol")
-df_AdjP_Vol$Date <- as.Date(df_AdjP_Vol$Date)
-#df_AdjP_Vol <- merge(df_AdjP_Vol, df_raw_sectInd, by = "Symb")
-df_cp <- df_AdjP_Vol[, c("Date", "Symb", "cp")]
-df_vol <- df_AdjP_Vol[, c("Date", "Symb", "vol")]
-#rm(df_AdjP_Vol); gc()
-df_cp <- df_cp %>% spread(Symb, cp)
-df_vol <- df_vol %>% spread(Symb, vol)
-o <- c()
-for(i in 1:ncol(df_cp)){x <- df_cp[, i]; o[i] <- length(which(is.na(x)))}
-o
-rmcols <- which(o >= 754)
-df_cp <- df_cp[, -rmcols]
-rmrows <- c(1:754)
-df_cp <- df_cp[-rmrows, ]
-# o <- c()
-# for(i in 1:ncol(df_cp)){x <- df_cp[, i]; o[i] <- length(which(is.na(x)))}
-# o
-# rmcols <- which(o >= 80)
-# df_cp <- df_cp[, -rmcols]
-# df_cp <- na.spline(df_cp)
-datevec <- df_cp$Date
-rownames(df_cp) <- df_cp$Date
-df_cp$Date <- NULL
-df_cp <- as.xts(df_cp, order.by = datevec)
-#---------------
-#df_cp_w <- fortify(apply.weekly(df_cp, mean))
-df_cp_w <- fortify(apply.monthly(df_cp, mean))
-#df_cp_w <- fortify(apply.yearly(df_cp, mean))
+library(quantmod)
 library(lubridate)
-df_cp_w$Month <- month(as.Date(df_cp_w$Index))
-df_cp_w$Index <- NULL
-zdf_cp_w <- scale(df_cp_w[, -ncol(df_cp_w)])
-zdf_cp_w <- data.frame(Month = df_cp_w$Month, zdf_cp_w)
-#df_cp_w[1:5,469:472]
-#rownames(df_cp_w) <- df_cp_w$Index
-zdf_cp_w <- zdf_cp_w %>% group_by(Month) %>% summarize_all(mean)
-class(zdf_cp_w)
-zdf_cp_w <- as.data.frame(zdf_cp_w)
-rownames(zdf_cp_w) <- zdf_cp_w$Month
-zdf_cp_w$Month <- NULL
-zdf_cp_w <- as.data.frame(t(zdf_cp_w))
-zdf_cp_w$Symb <- rownames(zdf_cp_w)
-zdf_cp_w <- merge(zdf_cp_w, df_raw_sectInd, by = "Symb")
-rownames(zdf_cp_w) <- zdf_cp_w$Symb
-zdf_cp_w$Symb <- NULL
-ind_num <- which(!(colnames(zdf_cp_w) %in% c("Sector", "Industry")))
+
+fromdate<-"2012-01-01"; todate <- "2018-02-02"
+getGlobTrnds(fromdate, todate)
+rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN"))
+xts_cp <- cpgtetfmat[, -rmcol]
+xts_vol <- volgtetfmat[, -rmcol]
+namevec <- colnames(xts_cp)
+n_names <- length(namevec)
+
+
+o <- apply(xts_cp, 2, function(x) length(which(is.na(x))))
+table(o)
+rmcols <- which(o > 57)
+colnames(xts_cp)[rmcols]
+xts_cp <- xts_cp[, -rmcols]
+xts_vol <- xts_vol[, -rmcols]
+o <- apply(xts_cp, 1, function(x) length(which(is.na(x))))
+table(o)
+xts_cp <- na.spline(xts_cp)
+xts_vol <- na.spline(xts_vol)
+o <- apply(xts_cp, 1, function(x) length(which(is.na(x))))
+table(o)
+#---------------
+n_ts <- ncol(xts_cp)
+#---------------
+list_df <- list()
+for(i in 1:n_ts)
+{
+  this_sec <- colnames(xts_cp)[i]
+  out_df <- fortify(VWMA(xts_cp[, i], xts_vol[, i]))
+  colnames(out_df)[2] <- this_sec
+  list_df[[i]] <- out_df
+}
+df_vwma <- join_all(list_df)
+datevec <- df_vwma$Index
+rm_rows <- which(is.na(df_vwma[, 2]))
+df_vwma <- df_vwma[-rm_rows, ]
+datevec <- df_vwma$Index
+#---------------
+df_cp <- fortify(xts_cp[-rm_rows, ])
+df_ma <- df_vwma
+df_cp$Index <- NULL
+df_ma$Index <- NULL
+df_dt <- df_cp - df_ma
+df_dt$Index <- datevec
+#--------
+df_vwma_plot <- df_vwma[, c("Index", "SPY")]
+df_dt_plot <- as.data.frame(df_vwma$SPY - df_cp$SPY)
+colnames(df_dt_plot)[1] <- "SPY"
+df_dt_plot$Index <- datevec
+df_vwma_plot$Index <- as.Date(df_vwma_plot$Index)
+
+slopeFun <- function(x){
+  for(s in s_start:s_end)
+  {
+    datseg <- indata[(s-wind):s]
+    q <- polyfit(x, datseg, n=2)
+    #    dydx[s]<-q[1]
+    a2<-q[1];a1<-q[2];a0<-q[3]
+    udydx<-mean(2*a2*x+a1)
+    dydx[s]<-udydx
+    udydx<-c()
+  }
+  
+}
+
+gg1 <- ggplot(df_vwma_plot, aes(x = Index, y = SPY)) + geom_line()
+gg2 <- ggplot(df_dt_plot, aes(x = Index, y = SPY)) + geom_line()
+grid.arrange(gg1, gg2, ncol = 1)
+
+
+
+#--------
+selectnames <- c("FM", "UUP", "USO", "TTEK", "GRN", "SPY")
+df_mnth <- df_evwma
+df_mnth <- df_mnth[, which(colnames(df_mnth) %in% selectnames)]
+df_mnth$date <- datevec
+gathercols <- colnames(df_mnth)[1:(ncol(df_mnth) - 1)]
+df_mnth <- gather_(df_mnth, "name", "cp", gathercols)
+df_mnth$Year <- year(df_mnth$date)
+df_mnth$Month <- month(df_mnth$date)
+df_mnth$Day <- yday(df_mnth$date)
+df_mnth <- df_mnth[-which(is.na(df_mnth$cp)), ]
+df_volat <- df_mnth
+df_volat <- df_volat %>% group_by(name, Year, Month) %>% summarize(cp_mu = mean(cp, na.rm = T), cp_sd = sd(cp, na.rm = T))
+df_volat$cv <- df_volat$cp_sd / df_volat$cp_mu
+df_volat$date <- as.yearmon(paste(df_volat$Year, df_volat$Month, sep = "-"))
+#--------
+df_volat$date <- as.Date(df_volat$date)
+gg <- ggplot(df_volat, aes(x = date, y = cv, group = name, color = name)) + geom_line()
+gg <- gg + facet_wrap(~Year, ncol = 1, scales = "free")
+gg
+#df_mnth <- df_mnth %>% group_by(Year, name) %>% mutate(scale(cp))
+
+
+
+
+#---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gg <- ggplot(df_mnth, aes(x = Day, y = `scale(cp)`, group = name, color = name)) + geom_line()
+gg <- gg + facet_wrap(~Year, ncol = 1)
+gg
+df_mnth$Year <- as.factor(df_mnth$Year)
+gg <- ggplot(df_mnth, aes(x = Day, y = `scale(cp)`, group = Year, color = Year)) + geom_line()
+gg <- gg + facet_wrap(~name, ncol = 2)
+gg
+#--------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+df <- df_dt[, which(!(colnames(df_dt) %in% c("PGD", "VXX", "EWH")))]
+df <- scale(df)
+df$date <- datevec
+df$Month <- month(df$date, label = T)
+df$date <- NULL
+df <- df %>% group_by(Month) %>% summarise_each(funs(mean(., na.rm = TRUE))) #summarize_all(mean)
+class(df)
+df <- as.data.frame(df)
+rownames(df) <- df$Month
+df$Month <- NULL
+df <- as.data.frame(t(df))
+#df$Symb <- rownames(df)
+
+res <- PCA(df)
+fviz_screeplot(res, ncp=5)
+fviz_pca_biplot(res)
+#---------------
+mc <- Mclust(df)
+summary(mc)
+fviz_cluster(mc, frame.type = "norm", geom = "point")
+#---------------
+df_cor <- df
+corMatMy <- cor(df_cor)
+corrplot(corMatMy, order = "hclust")
+#--------------------
+df_cor <- df_dt[-c(1:10), which(colnames(df_dt) != "PGD")]
+corMatMy <- cor(df_cor)
+corrplot(corMatMy, order = "hclust")
+#--------------------
+df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#---------------
+df_cp <- fortify(apply.weekly(xts_cp, mean))
+#df_cp_w <- fortify(apply.monthly(df_cp, mean))
+#df_cp_w <- fortify(apply.yearly(df_cp, mean))
+df_cp$Month <- months(as.Date(df_cp$Index))
+df_cp$Index <- NULL
+zdf_cp <- scale(df_cp[, -ncol(df_cp)])
+zdf_cp <- data.frame(Month = df_cp$Month, zdf_cp)
+zdf_cp <- zdf_cp %>% group_by(Month) %>% summarize_all(mean)
+class(zdf_cp)
+zdf_cp <- as.data.frame(zdf_cp)
+rownames(zdf_cp) <- zdf_cp$Month
+zdf_cp$Month <- NULL
+zdf_cp <- as.data.frame(t(zdf_cp))
+zdf_cp$Symb <- rownames(zdf_cp)
 #--
-corMatMy <- cor(zdf_cp_w[, ind_num])
+GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo$X <- NULL
+colnames(GroupInfo)[1] <- "Symb"
+zdf_cp <- merge(zdf_cp, GroupInfo, by = "Symb")
+rownames(zdf_cp) <- zdf_cp$Symb
+#--
+zdf_cp$Symb <- NULL
+ind_num <- which(!(colnames(zdf_cp) %in% c("General.Type", "Sub.type", "Specific.Track")))
+#--
+corMatMy <- cor(zdf_cp[, ind_num])
 corrplot(corMatMy, order = "hclust")
 #Apply correlation filter at 0.70,
-highlyCor <- colnames(zdf_cp_w)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
-print(highlyCor)
+# highlyCor <- colnames(zdf_cp)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
+# print(highlyCor)
 #--
-res <- PCA(zdf_cp_w[, ind_num])
+res <- PCA(zdf_cp[, ind_num])
 fviz_screeplot(res, ncp=5)
-zdf_cp_w$Sector <- as.factor(zdf_cp_w$Sector)
-fviz_pca_ind(res, habillage = zdf_cp_w[, "Sector"])
-fviz_pca_biplot(res, habillage = zdf_cp_w[, "Sector"])#,
-
-
-
-
-
-
-
-df_cp_w <- as.data.frame(t(df_cp_w))
-df_cp_w$Symb <- rownames(df_cp_w)
-df_cp_w <- merge(df_cp_w, df_raw_sectInd, by = "Symb")
-rownames(df_cp_w) <- df_cp_w$Symb
-df_cp_w$Symb <- NULL
-ind_num <- which(!(colnames(df_cp_w) %in% c("Sector", "Industry")))
-zdf_cp_w <- as.data.frame(t(zdf_cp_w))
-zdf_cp_w$Symb <- rownames(zdf_cp_w)
-zdf_cp_w <- merge(zdf_cp_w, df_raw_sectInd, by = "Symb")
-rownames(zdf_cp_w) <- zdf_cp_w$Symb
-zdf_cp_w$Symb <- NULL
-res <- PCA(zdf_cp_w[, ind_num])
-df_cp_w$Sector <- as.factor(df_cp_w$Sector)
-zdf_cp_w$Sector <- as.factor(zdf_cp_w$Sector)
-fviz_pca_ind(res, habillage = zdf_cp_w[, "Sector"])
-fviz_pca_biplot(res, habillage = zdf_cp_w[, "Sector"])#,
-#                addEllipses = TRUE,
-  #               col.var = "red", alpha.var ="cos2",
-  #               label = "var") +
-  # scale_color_brewer(palette="Dark2")
-fviz_pca_ind(res, col.ind = "cos2",
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")#,
-             #repel = TRUE # Avoid text overlapping (slow if many points)
-)
-
-# # Contributions of variables to PC1
-# fviz_contrib(res, choice = "ind", axes = 1, top = 30)
-# # Contributions of variables to PC2
-# fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
-
-xts_cpW <- apply.weekly(df_cp, mean)
-class(xts_cpW)
-#xts_cpW <- apply.monthly(df_cp, mean)
+zdf_cp$General.Type <- as.factor(zdf_cp$General.Type)
+#fviz_pca_ind(res, habillage = zdf_cp$General.Type)
+fviz_pca_biplot(res, habillage = zdf_cp$General.Type)#,
+#-------------------
 ema_per <- 21
-xts_cpEMA <- xts(apply(xts_cpW, MARGIN = 2, FUN = "EMA", n = ema_per), index(xts_cpW))
+datevec <- index(xts_cp)
+xts_cpEMA <- xts(apply(xts_cp, MARGIN = 2, FUN = "EMA", n = ema_per), datevec)
 class(xts_cpEMA)
+
+
+rmcolsEVWMA <- which(colnames(xts_cp) %in% c("PGD", "^IRX"))
+xts_cp_inEVWMA <- xts_cp[, -rmcolsEVWMA]
+xts_vol_inEVWMA <- xts_vol[, -rmcolsEVWMA]
+outlist <- list()
+for(i in 1:ncol(xts_cp_inEVWMA)){this_symb <- colnames(xts_cp_inEVWMA)[i] 
+this_series <- fortify(EVWMA(xts_cp_inEVWMA[, i],xts_vol_inEVWMA[, i]))
+colnames(this_series)[2] <- this_symb;print(head(this_series))
+outlist[[i]] <- this_series}
+
+for(i in 1:length(outlist)){print(tail(outlist[[i]]))}
+
+xts_cpEVWMA <- join_all(outlist)
+
 #xts_cpEMA <- xts(apply(xts_cpW, MARGIN = 2, FUN = "EVWMA", volume = ), index(xts_cpW))
 #num_na <- ema_per - 1
 xts_cpEMA <- xts_cpEMA[c(ema_per:nrow(xts_cpEMA)),]
 class(xts_cpEMA)
 #volmat <- volmat[c(ema_per:nrow(volmat)),]; volmat <- round(volmat, 4)
-sOsc_per <- 13
-xts_cpsOsc <- xts(apply(xts_cpEMA, MARGIN = 2, FUN = "slopeOsc", wind = sOsc_per), index(xts_cpEMA))
-xts_cpsOsc <- xts_cpsOsc[c((sOsc_per + 1):nrow(xts_cpsOsc)),]
-class(xts_cpsOsc)
-df_cpsOsc <- fortify(xts_cpsOsc)
-rownames(df_cpsOsc) <- df_cpsOsc$Index
-df_cpsOsc$Index <- NULL
-df_cpO <- as.data.frame(t(df_cpsOsc))
-df_cpO$Symb <- rownames(df_cpO)
-df_cpO <- merge(df_cpO, df_raw_sectInd, by = "Symb")
-rownames(df_cpO) <- df_cpO$Symb
-df_cpO$Symb <- NULL
-ind_num <- which(!(colnames(df_cpO) %in% c("Sector", "Industry")))
-res <- PCA(df_cpO[, ind_num])
-df_cpO$Sector <- as.factor(df_cpO$Sector)
-fviz_pca_ind(res, habillage = df_cpO[, "Sector"])
-fviz_pca_biplot(res, habillage = df_cpO[, "Sector"])
-ggpairs(df_outPCA[, 1:5], aes(alpha = 0.4))
+# library(pracma)
+# sOsc_per <- 13
+# xts_cpsOsc <- xts(apply(xts_cpEMA, MARGIN = 2, FUN = "slopeOsc", wind = sOsc_per), index(xts_cpEMA))
+# xts_cpsOsc <- xts_cpsOsc[c((sOsc_per + 1):nrow(xts_cpsOsc)),]
+# class(xts_cpsOsc)
+# df_cpsOsc <- fortify(xts_cpsOsc)
+# rownames(df_cpsOsc) <- df_cpsOsc$Index
+# df_cpsOsc$Index <- NULL
+# df_cpO <- as.data.frame(t(df_cpsOsc))
+# df_cpO$Symb <- rownames(df_cpO)
+# df_cpO <- merge(df_cpO, df_raw_sectInd, by = "Symb")
+# rownames(df_cpO) <- df_cpO$Symb
+# df_cpO$Symb <- NULL
+# ind_num <- which(!(colnames(df_cpO) %in% c("Sector", "Industry")))
+# res <- PCA(df_cpO[, ind_num])
+# df_cpO$Sector <- as.factor(df_cpO$Sector)
+# fviz_pca_ind(res, habillage = df_cpO[, "Sector"])
+# fviz_pca_biplot(res, habillage = df_cpO[, "Sector"])
+# ggpairs(df_outPCA[, 1:5], aes(alpha = 0.4))
 #--
-df_cpO_sectr <- df_cpO %>% group_by(Sector) %>% summarize_all(mean)
-df_cpO_sectr$Industry <- NULL
-rownames(df_cpO_sectr) <- df_cpO_sectr$Sector
-df_cpO_sectr$Sector <- NULL
-df_cpO_sectr <- as.data.frame(t(df_cpO_sectr))
-corMatMy <- cor(df_cpO_sectr)
-corrplot(corMatMy, order = "hclust")
-#Apply correlation filter at 0.70,
-highlyCor <- colnames(df_cpO_sectr)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
-print(highlyCor)
+# df_cpO_sectr <- df_cpO %>% group_by(General.Type) %>% summarize_all(mean)
+# df_cpO_sectr$Industry <- NULL
+# rownames(df_cpO_sectr) <- df_cpO_sectr$Sector
+# df_cpO_sectr$Sector <- NULL
+# df_cpO_sectr <- as.data.frame(t(df_cpO_sectr))
+# corMatMy <- cor(df_cpO_sectr)
+# corrplot(corMatMy, order = "hclust")
+# #Apply correlation filter at 0.70,
+# highlyCor <- colnames(df_cpO_sectr)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
+# print(highlyCor)
 #------------------
-class(xts_cpsOsc)
-monthvec <- months(index(xts_cpsOsc))
-df_cpsOsc <- data.frame(Month = monthvec, fortify(xts_cpsOsc))
-df_cpsOsc$Index <- NULL
-df_cpsOsc_month <- df_cpsOsc %>% group_by(Month) %>% summarize_all(mean)
-rownames(df_cpsOsc_month) <- df_cpsOsc_month$Month
-df_cpsOsc_month$Month <- NULL
-df_cpsOsc_month <- as.data.frame(t(df_cpsOsc_month))
-corMatMy <- cor(df_cpsOsc_month)
-corrplot(corMatMy, order = "hclust")
-#Apply correlation filter at 0.70,
-highlyCor <- colnames(df_cpsOsc_month)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
-print(highlyCor)
+# class(xts_cpsOsc)
+# monthvec <- months(index(xts_cpsOsc))
+# df_cpsOsc <- data.frame(Month = monthvec, fortify(xts_cpsOsc))
+# df_cpsOsc$Index <- NULL
+# df_cpsOsc_month <- df_cpsOsc %>% group_by(Month) %>% summarize_all(mean)
+# rownames(df_cpsOsc_month) <- df_cpsOsc_month$Month
+# df_cpsOsc_month$Month <- NULL
+# df_cpsOsc_month <- as.data.frame(t(df_cpsOsc_month))
+# corMatMy <- cor(df_cpsOsc_month)
+# corrplot(corMatMy, order = "hclust")
+# #Apply correlation filter at 0.70,
+# highlyCor <- colnames(df_cpsOsc_month)[findCorrelation(corMatMy, cutoff = 0.7, verbose = TRUE)]
+# print(highlyCor)
 #-----------------
 
 #=============================================
 datevec <<- index(xts_cpEMA)
-indata <- xts_cpEMA[, "AAL"]
-out <- getBuySellbinryVar(indata)
-buy_sig <- as.integer(as.character(out[[1]]))
-sell_sig <- as.integer(as.character(out[[2]]))
-df_buysell <- data.frame(Date = index(xts_cpEMA), buySig = buy_sig, sellSig = sell_sig)
+n_stocks <- ncol(xts_cpEMA)
+outlist <- list()
+outlist_buy <- list()
+outlist_sell <- list()
+for(i in 1:n_stocks)
+{
+  indata <- xts_cpEMA[, i]
+  out <- getBuySellbinryVar(indata)
+  # buy_sig <- as.integer(as.character(out[[1]]))
+  # sell_sig <- as.integer(as.character(out[[2]]))
+  buy_sig <- out[[3]]
+  sell_sig <- out[[4]]
+  df_buysell <- data.frame(Date = index(xts_cpEMA), buySig = buy_sig, sellSig = sell_sig)
+  df_buysell$Month <- months(df_buysell$Date)
+  df_buysell_m <- df_buysell %>% group_by(Month) %>% summarize(buy = sum(buySig), sell = sum(sellSig))
+  df_buysell_m <- df_buysell_m %>% gather(Sig, Value, buy:sell)
+  #df_buysell_m <- df_buysell_m %>% gather(Sig, Value, buy:sell) %>% unite(MonthSig, Month, Sig)
+  #df_buysell_m <- df_buysell_m %>% spread(MonthSig, Value)
+  df_buysell_m <- df_buysell_m %>% spread(Month, Value)
+  #rownames(df_buysell_m) <- colnames(indata)
+  rownames(df_buysell_m) <- paste(df_buysell_m$Sig, colnames(indata))
+  df_buy_m <- df_buysell_m[1,]
+  df_sell_m <- df_buysell_m[2,]
+  rownames(df_buy_m) <- colnames(indata)
+  rownames(df_sell_m) <- colnames(indata)
+  outlist_buy[[i]] <- df_buy_m
+  outlist_sell[[i]] <- df_sell_m
+  
+}
+
+#df_SigCA <- do.call(rbind, outlist)
+df_SigCA_buy <- do.call(rbind, outlist_buy)
+df_SigCA_sell <- do.call(rbind, outlist_sell)
+df_SigCA <- rbind(df_SigCA_buy, df_SigCA_sell)
+#df_SigCA <- df_SigCA_sell
+df_SigCA$Symb <- rownames(df_SigCA)
+df_SigCA$Symb <- gsub("1", "", df_SigCA$Symb)
+df_SigCA <- merge(df_SigCA, GroupInfo, by = "Symb")
+df_SigCA$Symb <- NULL
+df_SigCA$x <- paste(df_SigCA$Specific.Track, df_SigCA$Sig)
+rownames(df_SigCA) <- df_SigCA$x
+df_SigCA$x <- NULL
+df_SigCA$Sig <- NULL
+df_SigCA$Specific.Track <- NULL
+#-
+# cormat <- as.matrix(cor(df_SigCA))
+# corrplot(cormat, is.corr=T)
+#-
+ind_num <- which(!(colnames(df_SigCA) %in% c("General.Type", "Sub.type")))
+df_SigCA$General.Type <- as.factor(df_SigCA$General.Type)
+df_SigCA$Sub.type <- as.factor(df_SigCA$Sub.type)
+res <- CA(df_SigCA[, ind_num], ncp = 10)
+#summary(res)
+nrow(res$row$coord)
+nrow(df_SigCA)
+fviz_screeplot(res, addlabels = TRUE)
+fviz_ca(res)
+fviz_ca_row(res, habillage = df_SigCA[,"General.Type"])
+col <- get_ca_col(res)
+corrplot(col$cos2, is.corr=FALSE)
+#-
+df_outCA <- as.data.frame(res$row$coord)
+get_clust_tendency(df_outCA, n = 50, gradient = list(low = "steelblue",  high = "white"))
+fviz_nbclust(df_outCA, kmeans, method = "gap_stat")
+pam.res <- pam(df_outCA, 5)
+fviz_cluster(pam.res)
+mc <- Mclust(df_outCA)
+summary(mc)
+fviz_cluster(mc, frame.type = "norm", geom = "point")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #class(df_buysell$Date)
 Modmat <- df_cpsOsc
 Modmat$Month <- NULL
@@ -322,7 +525,7 @@ objModel <- train(Modmat_train[, vars_screened], Modmat_train[,outcomeName_buy],
 
 
 
- 
+
 df_outPCA <- as.data.frame(res$ind$coord)
 get_clust_tendency(df_cpO[, ind_num], n = 50, gradient = list(low = "steelblue",  high = "white"))
 fviz_nbclust(df_cpO[, ind_num], kmeans, method = "gap_stat")
@@ -483,5 +686,3 @@ rownames(df_km)[which(df_km$kmClust == 1)]
 #z <- round(f1$z,3)
 # dens <- interp.surface(f1, df_rf[,c(1,2)])
 # head(dens)
-
-
