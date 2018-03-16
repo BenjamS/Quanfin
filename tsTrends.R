@@ -1,5 +1,74 @@
-captureEvents<-function(indata,wind=13,graph1=1,graph2=1)
+tsTrends <- function(in_ts, wind = 17, graph = T)
 {
+  #Captures index of sustained up and down trends of a time series
+  #by identifying periods of consecutive time steps in which slope
+  #is positve (for up trends) or negative (for down trends)
+  #Since this is based on measuring slope in a rolling window,
+  #best to use a smoothed series (via EMA for eg.). Consider scaling too.
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #---------------------
+  #Rolling slope
+  #---------------------
+  #per_ema <- 13
+  #in_ts <- EMA(xts_cp[, 1], per_ema)
+  #in_ts <- scale(EMA(xts_cp[, 1], per_ema))
+  s_start <- wind + 1
+  s_end <- length(in_ts)
+  x <- c(1:(wind + 1))
+  dydx_mu <- c()
+  dydx_sd <- c()
+  t <- 0
+  #---------------------
+  for(s in s_start:s_end)
+  {
+    datseg <- in_ts[(s - wind):s]
+    q <- polyfit(x, datseg, n = 2)
+    a2 <- q[1]; a1 <- q[2]; a0 <- q[3]
+    this_slope <- 2 * a2 * x + a1
+    t <- t + 1
+    dydx_mu[t] <- mean(this_slope)
+    dydx_sd[t] <- sd(this_slope)
+  }
+  dydx_cv <- dydx_sd / dydx_mu
+  mu_dydx_mu <- mean(dydx_mu)
+  #---------------------
+  #Identify periods of consecutively positive (for up trends)
+  #or negative (for down trends) slope
+  #---------------------
+  ind_downtrend <- which(dydx_mu > mu_dydx_mu) + round((per_ema + wind) / 2)
+  ts_up <- in_ts
+  ts_up[ind_downtrend] <- NA
+  ts_down <- rep(NA, nrow(in_ts))
+  ts_down[ind_downtrend] <- in_ts[ind_downtrend]
+  ind2_uptrend <- which(diff(ind_uptrend) > 1)
+  ind2_uptrend <- c(1, ind2_uptrend, length(ind_uptrend))
+  ts_mat <- cbind(in_ts, ts_up, ts_down)
+  
+  df <- fortify(ts_mat)
+  df$Index <- as.Date(df$Index)
+  colnames(df)[2:4] <- c("ts", "uptrend", "downtrend")
+  df_plot <- df %>% gather(series, value, ts:downtrend)
+  ggplot(df_plot, aes(x = Index, y = value, group = series, color = series)) + geom_line(size = 1.5)
+  
+  
+  #---------------------
+  
+  
+  
+  
+  
+  
+  
+  
   datevec<-as.numeric(gsub('-', '', datevec))
   datevec<-as.Date(as.character(datevec),format="%Y%m%d")
   #-----------------------
