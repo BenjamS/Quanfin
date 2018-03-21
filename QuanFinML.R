@@ -1,4 +1,4 @@
-setwd("D:/OneDrive - CGIAR/Documents")
+#setwd("D:/OneDrive - CGIAR/Documents")
 source('./tsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
@@ -13,8 +13,11 @@ library(randomForest)
 library(corrplot)
 library(quantmod)
 library(lubridate)
+library(caret)
+library(scales)
 
-fromdate<-"2012-01-01"; todate <- "2018-03-12"
+
+fromdate<-"2012-01-01"; todate <- "2018-03-20"
 getGlobTrnds(fromdate, todate)
 rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX"))
 xts_cp <- cpgtetfmat[, -rmcol]
@@ -131,34 +134,142 @@ fviz_pca_biplot(res, habillage = df_pca$General.Type)
 # summary(mc)
 # fviz_cluster(mc, frame.type = "norm", geom = "point")
 #====================================
-df_feat <- df_ldydxcv
+#====================================
+#====================================
+# df_feat1 <- df_ldydxcv
+# df_feat2 <- df_dydxmu
+# n <- ncol(df_feat1)
+# colnames(df_feat1)[1:(n - 1)] <- paste(colnames(df_feat1)[1:(n - 1)], "A")
+# df_feat <- join_all(list(df_feat1, df_feat2))
+# df_feat <- df_ldydxcv
+df_feat <- df_dydxmu
 rownames(df_feat) <- df_feat$Index
 df_feat$Index <- NULL
 keep_rows <- unique(c(which(is.na(df_feat[, 1]) == F), which(is.nan(df_feat[, 1]) == F)))
 df_feat <- df_feat[keep_rows, ]
 # o <- apply(df_feat, 2, function(x) length(which(is.na(x))))
 # table(o)
-df_mod <- as.data.frame(PCA(df_feat, ncp = 8)$ind$coord)
-df_mod$y <- df_sigs[keep_rows, "SPY"]
-
+#df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
+df_mod <- df_feat
+df_mod$y <- as.factor(df_sigs[keep_rows, "SPY"])
+class(df_mod$y)
 
 #outcomeName_Any <- "anySig"
 
-predictorsNames <- colnames(df_mod)[2:ncol(df_mod)]
-outcomeName <- colnames(df_mod)[1]
-traindat_pctot <- .42
+predictorsNames <- colnames(df_mod)[1:(ncol(df_mod) - 1)]
+outcomeName <- colnames(df_mod)[ncol(df_mod)]
+traindat_pctot <- .5
 indtrain_beg <- 1
-indtrain_end <- round(length(datevec)*traindat_pctot)
+indtrain_end <- round(length(datevec) * traindat_pctot)
 indtest_beg <- indtrain_end + 1
 indtest_end <- nrow(df_mod)
-Modmat_train <- df_mod[indtrain_beg:indtrain_end, ]
-Modmat_test <- df_mod[indtest_beg:indtest_end, ]
+df_train <- df_mod[indtrain_beg:indtrain_end, ]
+df_test <- df_mod[indtest_beg:indtest_end, ]
+
+set.seed(1234)
+#splitIndex <- createDataPartition(df_mod[, outcomeName], p = .5, list = FALSE, times = 1)
+splitIndex <- createTimeSlices(df_mod[, outcomeName], 30)
+df_train <- df_mod[ splitIndex,]
+df_test <- df_mod[-splitIndex,]
+
+#this_method <- "glmnet"
+#this_method <- "glm"
+#this_method <- "nb"
+this_method <- "gbm" #good
+this_method <- "xgbLinear" #better
+#this_method <- "xgbTree"
+#this_method <- "naive_bayes"
+#this_method <- "svmRadial"
+#this_method <- "cforest"
+#this_method <- "rf"
+
+# gbmGrid <-  expand.grid(n.trees = 50, interaction.depth =  c(1, 5, 9),
+#                         shrinkage = 0.01, n.minobsinnode = )
+# run model
+# head(trainDF[,predictorsNames])
+# head(trainDF[,outcomeName])
+# head(trainDF)
+#=============================
+modelLookup(this_method)
+#=============================
+objControl <- trainControl(method = 'repeatedcv', number = 3)#, repeats = 3)
+objModel <- train(df_train[, predictorsNames], df_train[, outcomeName],
+                  method = this_method, trControl = objControl)
+varImp(objModel, scale = T)
+# probabilities ("prob") or integer ("raw")
+predictions <- predict(object = objModel, df_test[, predictorsNames], type = 'raw') #type='prob')
+print(postResample(pred = predictions, obs = as.factor(df_test[,outcomeName])))
+#head(predictions)
+x <- confusionMatrix(predictions, df_test[, outcomeName])
+confmat <- x$table
+confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
+confmat <- as.table(confmat)
+colnames(confmat) <- rownames(confmat)
+names(dimnames(confmat))[2] <- "Reference"
+print(confmat)
+print(x$table)
+class(confmat)
+df_plot <- as.data.frame(confmat)
+gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
+gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
+gg
 
 
-library(caret)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #names(getModelInfo())
 # boosted tree model (gbm) adjust learning rate and and trees
-objControl <- trainControl(method='cv', number=3, returnResamp='none', summaryFunction = twoClassSummary, classProbs = TRUE)
+objControl <- trainControl(method = 'cv', number = 3, returnResamp = 'none', classProbs = TRUE)
 # gbmGrid <-  expand.grid(interaction.depth =  c(1, 5, 9),
 #                         n.trees = 50,
 #                         shrinkage = 0.01)
@@ -174,18 +285,18 @@ this_method <- "gbm" #good
 #this_method <- "svmRadial"
 #this_method <- "cforest"
 objModel <- train(Modmat_train[, predictorsNames], Modmat_train[, outcomeName],
-                  method=this_method,
-                  trControl=objControl,
+                  method = this_method,
+                  trControl = objControl,
                   preProc = c("center", "scale"))
 
-# predictions <- predict(object=objModel, Modmat_test[,predictorsNames], type='raw')
-# head(predictions)
-# print(postResample(pred=predictions, obs=as.factor(Modmat_test[,outcomeName_buy])))
+predictions <- predict(object=objModel, Modmat_test[,predictorsNames], type='raw')
+head(predictions)
+print(postResample(pred = predictions, obs = as.factor(Modmat_test[, outcomeName])))
 
 # probabilities 
-predictions_buy <- predict(object=objModel, Modmat_test[,predictorsNames], type='prob')
-head(predictions_buy)
-postResample(pred=predictions_buy[[2]], obs=ifelse(Modmat_test[,outcomeName_buy]=='buy',1,0))
+predictions <- predict(object = objModel, Modmat_test[, predictorsNames], type = 'prob')
+head(predictions)
+postResample(pred = predictions_buy[[2]], obs = ifelse(Modmat_test[,outcomeName] == 'buy', 1 , 0))
 
 
 varImp(objModel,scale=T)
@@ -199,7 +310,7 @@ varnames <- rownames(var_importance)
 #vars_screened <- summary(objModel)[which(relinf > q),"var"]
 vars_screened <- varnames[which(var_importance[, 1] > q)]
 vars_screened <- as.character(vars_screened)
-objModel <- train(Modmat_train[, vars_screened], Modmat_train[,outcomeName_buy],
+objModel <- train(Modmat_train[, vars_screened], Modmat_train[, outcomeName],
                   method=this_method, 
                   trControl=objControl,  
                   metric = "ROC",
