@@ -1,4 +1,4 @@
-#setwd("D:/OneDrive - CGIAR/Documents")
+setwd("D:/OneDrive - CGIAR/Documents")
 source('./tsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
@@ -19,7 +19,7 @@ library(scales)
 
 fromdate<-"2012-01-01"; todate <- "2018-03-20"
 getGlobTrnds(fromdate, todate)
-rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX"))
+rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD"))
 xts_cp <- cpgtetfmat[, -rmcol]
 xts_vol <- volgtetfmat[, -rmcol]
 namevec <- colnames(xts_cp)
@@ -55,18 +55,44 @@ for(i in 1:n_ts)
 df_vwma <- join_all(list_df)
 datevec <- index(xts_cp)
 xts_cpVWMA <- xts(df_vwma[, -1], datevec)
-
 # rm_rows <- which(is.na(df_vwma[, 2]))
 # df_vwma <- df_vwma[-rm_rows, ]
 # datevec <- df_vwma$Index
-#---------------
+#====================================
+#Get mean, cv of major groups
+df_CV <- as.data.frame(t(df_vwma[, 2:ncol(df_vwma)]))
+colnames(df_CV) <- as.character(df_vwma$Index)
+df_CV$name <- rownames(df_CV)
+GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo$X <- NULL
+colnames(GroupInfo)[1] <- "name"
+df_CV <- merge(df_CV, GroupInfo[, c("name", "Sub.type")], by = "name")
+df_CV$name <- NULL
+gathercols <- colnames(df_CV)
+df_CVmu <- df_CV %>% group_by(Sub.type) %>% summarise_all(mean)
+df_CVsd <- df_CV %>% group_by(Sub.type) %>% summarise_all(sd)
+df_groupCV <- as.data.frame(t(df_CVsd[, -1] / df_CVmu[, -1]))
+df_groupMU <- as.data.frame(t(df_CVmu[, -1]))
+colnames(df_groupCV) <- paste(df_CVmu$Sub.type, "CV")
+colnames(df_groupMU) <- paste(df_CVmu$Sub.type, "MU")
+o <- apply(df_groupCV, 2, function(x) length(which(is.nan(x))))
+table(o)
+rmcols <- which(o > 10)
+colnames(df_groupCV)[rmcols]
+df_groupCV <- df_groupCV[, -rmcols]
+df_groupMU <- df_groupMU[, -rmcols]
+df_group <- cbind(df_groupCV, df_groupMU)
+xts_group <- xts(df_group, as.Date(rownames(df_group)))
+#====================================
+xts_inMat <- cbind(xts_cpVWMA, xts_group)
 list_df <- list()
 list_df_critpoints <- list()
 list_df_dydxmu <- list()
 list_df_ldydxcv <- list()
 list_df_sigs <- list()
+n_ts <- ncol(xts_inMat)
 for(i in 1:n_ts){
-  in_ts <- xts_cpVWMA[, i]
+  in_ts <- xts_inMat[, i]
   print(colnames(in_ts))
   out <- tsTrends(in_ts, quietly = T)
   list_df[[i]] <- out[[1]]
@@ -80,69 +106,20 @@ df_dydxmu <- do.call(cbind, list_df_dydxmu)
 df_ldydxcv <- do.call(cbind, list_df_ldydxcv)
 df_sigs <- do.call(cbind, list_df_sigs)
 df <- do.call(rbind, list_df)
-colnames(df_dydxmu) <- colnames(xts_cpVWMA)
-colnames(df_ldydxcv) <- colnames(xts_cpVWMA)
-colnames(df_sigs) <- colnames(xts_cpVWMA)
-df_dydxmu$Index <- index(xts_cpVWMA)
-df_ldydxcv$Index <- index(xts_cpVWMA)
-df$name <- colnames(xts_cpVWMA)
-#====================================
-df_pca <- df
-GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
-GroupInfo$X <- NULL
-colnames(GroupInfo)[1] <- "name"
-df_pca <- merge(df_pca, GroupInfo, by = "name")
-#df_pca <- df_pca[-which(df_pca$name == "VXX"), ]
-#df_pca <- df_pca[-which(df_pca$name == "PGD"), ]
-rownames(df_pca) <- df_pca$name
-df_pca$name <- NULL
-df_pca$General.Type <- as.factor(df_pca$General.Type)
-ind_num <- which(!(colnames(df_pca) %in% c("General.Type", "Sub.type", "Specific.Track")))
-#---------------
-res <- PCA(df_pca[, ind_num])
-fviz_screeplot(res, ncp=5)
-fviz_pca_biplot(res, habillage = df_pca$General.Type)
-#====================================
-df_dydx_pca <- df_dydxmu
-#df_dydx_pca <- df_ldydxcv
-df_dydx_pca$Month <- month(df_dydx_pca$Index)
-gathercols <- colnames(df_dydx_pca)[1:(ncol(df_dydx_pca) - 2)]
-df_dydx_pca <- gather_(df_dydx_pca, "name", "ts", gathercols)
-df_dydx_pca <- df_dydx_pca[-which(is.na(df_dydx_pca$ts)), ]
-df_volat <- df_dydx_pca
-df_volat <- df_volat %>% group_by(name, Month) %>% summarize(ts_mu = mean(ts, na.rm = T), ts_sd = sd(ts, na.rm = T))
-df_volat$cv <- df_volat$ts_sd / df_volat$ts_mu
-#df_volat$date <- as.yearmon(paste(df_volat$Year, df_volat$Month, sep = "-"))
-df_volat <- df_volat[which(is.nan(df_volat$cv) == F),]
-df_volat <- df_volat[, c("name", "Month", "cv")]
-df_volat <- df_volat %>% spread(Month, cv)
-colnames(df_volat)[2:13] <- month.abb[as.numeric(colnames(df_volat)[2:13])]
-#----------------------
-df_pca <- merge(df_volat, GroupInfo, by = "name")
-#df_pca <- df_pca[-which(df_pca$name == "VXX"), ]
-#df_pca <- df_pca[-which(df_pca$name == "PGD"), ]
-rownames(df_pca) <- df_pca$name
-df_pca$name <- NULL
-df_pca$General.Type <- as.factor(df_pca$General.Type)
-ind_num <- which(!(colnames(df_pca) %in% c("General.Type", "Sub.type", "Specific.Track")))
-#---------------
-res <- PCA(df_pca[, ind_num])
-fviz_screeplot(res, ncp=5)
-fviz_pca_biplot(res, habillage = df_pca$General.Type)
-#---------------
-# mc <- Mclust(df_pca[, ind_num])
-# summary(mc)
-# fviz_cluster(mc, frame.type = "norm", geom = "point")
-#====================================
-#====================================
+colnames(df_dydxmu) <- paste(colnames(xts_inMat), "dydxmu")
+colnames(df_ldydxcv) <- paste(colnames(xts_inMat), "ldydxcv")
+colnames(df_sigs) <- colnames(xts_inMat)
+df_dydxmu$Index <- index(xts_inMat)
+df_ldydxcv$Index <- index(xts_inMat)
+df$name <- colnames(xts_inMat)
 #====================================
 # df_feat1 <- df_ldydxcv
 # df_feat2 <- df_dydxmu
 # n <- ncol(df_feat1)
 # colnames(df_feat1)[1:(n - 1)] <- paste(colnames(df_feat1)[1:(n - 1)], "A")
-# df_feat <- join_all(list(df_feat1, df_feat2))
-# df_feat <- df_ldydxcv
-df_feat <- df_dydxmu
+df_groupCV$Index <- as.Date(rownames(df_groupCV))
+df_groupMU$Index <- as.Date(rownames(df_groupMU))
+df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU), by = "Index")
 rownames(df_feat) <- df_feat$Index
 df_feat$Index <- NULL
 keep_rows <- unique(c(which(is.na(df_feat[, 1]) == F), which(is.nan(df_feat[, 1]) == F)))
@@ -151,11 +128,42 @@ df_feat <- df_feat[keep_rows, ]
 # table(o)
 #df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
 df_mod <- df_feat
-df_mod$y <- as.factor(df_sigs[keep_rows, "SPY"])
-class(df_mod$y)
 
+name_y <- "SPY"
+
+in_ts <- xts_cpEMA[, name_y]
+print(colnames(in_ts))
+out <- tsTrends(in_ts, quietly = F)
+# list_df[[i]] <- out[[1]]
+# list_df_critpoints[[i]] <- out[[2]]
+# list_df_dydxmu[[i]] <- out[[3]]["dydxmu"]
+# list_df_ldydxcv[[i]] <- out[[3]]["ldydxcv"]
+y <- out[[3]][, "Sig"]
+nrow(out[[3]])
+nrow(xts_cpVWMA)
+
+df_plot1 <- fortify(in_ts)
+colnames(df_plot1)[2] <- paste(name_y, "ema")
+df_plot2 <- fortify(xts_cpVWMA[, name_y])
+colnames(df_plot2)[2] <- paste(name_y, "vwma")
+df_plot <- join_all(list(df_plot1, df_plot2), by = "Index")
+df_plot$buySig <- 0
+df_plot$buySig[which(y == "Buy")] <- 1
+df_plot$sellSig <- 0
+df_plot$sellSig[which(y == "Sell")] <- 1
+df_plot$Index <- as.Date(df_plot$Index)
+gathercols <- colnames(df_plot)[2:3]
+df_plot <- gather_(df_plot, "Ts_type", "Value", gathercols)
+ind_buy <- which(df_plot$buySig == 1)
+ind_sell <- which(df_plot$sellSig == 1)
+gg <- ggplot(df_plot, aes(x = Index, y = Value, group = Ts_type, color = Ts_type))
+gg <- gg + geom_line() + geom_vline(data = data.frame(xint = df_plot$Index[ind_buy], ts_type = "buy"), aes(xintercept = xint), linetype = "dotted", color = "green")
+gg
 #outcomeName_Any <- "anySig"
 
+
+df_mod$y <- as.factor(y)
+class(df_mod$y)
 predictorsNames <- colnames(df_mod)[1:(ncol(df_mod) - 1)]
 outcomeName <- colnames(df_mod)[ncol(df_mod)]
 traindat_pctot <- .5
@@ -224,7 +232,50 @@ gg
 
 
 
-
+df_pca <- df
+GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo$X <- NULL
+colnames(GroupInfo)[1] <- "name"
+df_pca <- merge(df_pca, GroupInfo, by = "name")
+rownames(df_pca) <- df_pca$name
+df_pca$name <- NULL
+df_pca$General.Type <- as.factor(df_pca$General.Type)
+ind_num <- which(!(colnames(df_pca) %in% c("General.Type", "Sub.type", "Specific.Track")))
+#---------------
+res <- PCA(df_pca[, ind_num])
+fviz_screeplot(res, ncp=5)
+fviz_pca_biplot(res, habillage = df_pca$General.Type)
+#====================================
+df_dydx_pca <- df_dydxmu
+#df_dydx_pca <- df_ldydxcv
+df_dydx_pca$Month <- month(df_dydx_pca$Index)
+gathercols <- colnames(df_dydx_pca)[1:(ncol(df_dydx_pca) - 2)]
+df_dydx_pca <- gather_(df_dydx_pca, "name", "ts", gathercols)
+df_dydx_pca <- df_dydx_pca[-which(is.na(df_dydx_pca$ts)), ]
+df_volat <- df_dydx_pca
+df_volat <- df_volat %>% group_by(name, Month) %>% summarize(ts_mu = mean(ts, na.rm = T), ts_sd = sd(ts, na.rm = T))
+df_volat$cv <- df_volat$ts_sd / df_volat$ts_mu
+#df_volat$date <- as.yearmon(paste(df_volat$Year, df_volat$Month, sep = "-"))
+df_volat <- df_volat[which(is.nan(df_volat$cv) == F),]
+df_volat <- df_volat[, c("name", "Month", "cv")]
+df_volat <- df_volat %>% spread(Month, cv)
+colnames(df_volat)[2:13] <- month.abb[as.numeric(colnames(df_volat)[2:13])]
+#----------------------
+df_pca <- merge(df_volat, GroupInfo, by = "name")
+#df_pca <- df_pca[-which(df_pca$name == "VXX"), ]
+#df_pca <- df_pca[-which(df_pca$name == "PGD"), ]
+rownames(df_pca) <- df_pca$name
+df_pca$name <- NULL
+df_pca$General.Type <- as.factor(df_pca$General.Type)
+ind_num <- which(!(colnames(df_pca) %in% c("General.Type", "Sub.type", "Specific.Track")))
+#---------------
+res <- PCA(df_pca[, ind_num])
+fviz_screeplot(res, ncp=5)
+fviz_pca_biplot(res, habillage = df_pca$General.Type)
+#---------------
+# mc <- Mclust(df_pca[, ind_num])
+# summary(mc)
+# fviz_cluster(mc, frame.type = "norm", geom = "point")
 
 
 
