@@ -108,10 +108,17 @@ df_sigs <- do.call(cbind, list_df_sigs)
 df <- do.call(rbind, list_df)
 colnames(df_dydxmu) <- paste(colnames(xts_inMat), "dydxmu")
 colnames(df_ldydxcv) <- paste(colnames(xts_inMat), "ldydxcv")
-colnames(df_sigs) <- colnames(xts_inMat)
+colnames(df_sigs) <- paste(colnames(xts_inMat), "sig")
 df_dydxmu$Index <- index(xts_inMat)
 df_ldydxcv$Index <- index(xts_inMat)
+df_sigs$Index <- index(xts_inMat)
 df$name <- colnames(xts_inMat)
+#====================================
+#====================================
+#====================================
+#====================================
+#Which time series are you trying to model
+name_y <- "SPY"
 #====================================
 # df_feat1 <- df_ldydxcv
 # df_feat2 <- df_dydxmu
@@ -119,7 +126,7 @@ df$name <- colnames(xts_inMat)
 # colnames(df_feat1)[1:(n - 1)] <- paste(colnames(df_feat1)[1:(n - 1)], "A")
 df_groupCV$Index <- as.Date(rownames(df_groupCV))
 df_groupMU$Index <- as.Date(rownames(df_groupMU))
-df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU), by = "Index")
+df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU, df_sigs[, -which(colnames(df_sigs) == paste(name_y, "sig"))]), by = "Index")
 rownames(df_feat) <- df_feat$Index
 df_feat$Index <- NULL
 keep_rows <- unique(c(which(is.na(df_feat[, 1]) == F), which(is.nan(df_feat[, 1]) == F)))
@@ -129,7 +136,6 @@ df_feat <- df_feat[keep_rows, ]
 #df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
 df_mod <- df_feat
 
-name_y <- "SPY"
 
 in_ts <- xts_cpEMA[, name_y]
 print(colnames(in_ts))
@@ -162,21 +168,21 @@ gg
 #outcomeName_Any <- "anySig"
 
 
-df_mod$y <- as.factor(y)
+df_mod$y <- as.factor(y[keep_rows])
 class(df_mod$y)
 predictorsNames <- colnames(df_mod)[1:(ncol(df_mod) - 1)]
 outcomeName <- colnames(df_mod)[ncol(df_mod)]
-traindat_pctot <- .5
-indtrain_beg <- 1
-indtrain_end <- round(length(datevec) * traindat_pctot)
-indtest_beg <- indtrain_end + 1
-indtest_end <- nrow(df_mod)
-df_train <- df_mod[indtrain_beg:indtrain_end, ]
-df_test <- df_mod[indtest_beg:indtest_end, ]
+# traindat_pctot <- .5
+# indtrain_beg <- 1
+# indtrain_end <- round(length(datevec) * traindat_pctot)
+# indtest_beg <- indtrain_end + 1
+# indtest_end <- nrow(df_mod)
+# df_train <- df_mod[indtrain_beg:indtrain_end, ]
+# df_test <- df_mod[indtest_beg:indtest_end, ]
 
 set.seed(1234)
-#splitIndex <- createDataPartition(df_mod[, outcomeName], p = .5, list = FALSE, times = 1)
-splitIndex <- createTimeSlices(df_mod[, outcomeName], 30)
+splitIndex <- createDataPartition(df_mod[, outcomeName], p = .5, list = FALSE, times = 1)
+#splitIndex <- createTimeSlices(df_mod[, outcomeName], 30)
 df_train <- df_mod[ splitIndex,]
 df_test <- df_mod[-splitIndex,]
 
@@ -203,7 +209,58 @@ modelLookup(this_method)
 objControl <- trainControl(method = 'repeatedcv', number = 3)#, repeats = 3)
 objModel <- train(df_train[, predictorsNames], df_train[, outcomeName],
                   method = this_method, trControl = objControl)
-varImp(objModel, scale = T)
+#-----------------------------
+var_importance <- varImp(objModel, scale = T)
+print(var_importance)
+#plot(var_importance)
+#-----------------------------
+#Predict using fitted model
+# probabilities ("prob") or integer ("raw")
+predictions <- predict(object = objModel, df_test[, predictorsNames], type = 'raw') #type='prob')
+print(postResample(pred = predictions, obs = as.factor(df_test[,outcomeName])))
+#head(predictions)
+df_plot <- rownames(df_test)
+#----------------------------
+#Confusion matrix
+x <- confusionMatrix(predictions, df_test[, outcomeName])
+confmat <- x$table
+confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
+confmat <- as.table(confmat)
+colnames(confmat) <- rownames(confmat)
+names(dimnames(confmat))[2] <- "Reference"
+print(confmat)
+print(x$table)
+class(confmat)
+df_plot <- as.data.frame(confmat)
+gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
+gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
+gg
+#----------------------------
+#redux with only important variables
+q <- as.numeric(quantile(var_importance$importance[, 1], probs = 0.85))
+u_name <- rownames(var_importance$importance)
+u_val <- var_importance$importance$Overall
+impvar_names <- u_name[which(u_val > q)]
+rm(u_val, u_name)
+y_col <- which(colnames(df_mod) == "y")
+keep_cols <- c(which(colnames(df_mod) %in% impvar_names), y_col)
+df_mod2 <- df_mod[, keep_cols]
+#-----------
+predictorsNames <- colnames(df_mod2)[1:(ncol(df_mod2) - 1)]
+outcomeName <- colnames(df_mod2)[ncol(df_mod2)]
+set.seed(1234)
+splitIndex <- createDataPartition(df_mod2[, outcomeName], p = .5, list = FALSE, times = 1)
+#splitIndex <- createTimeSlices(df_mod[, outcomeName], 30)
+df_train <- df_mod2[ splitIndex,]
+df_test <- df_mod2[-splitIndex,]  
+objControl <- trainControl(method = 'repeatedcv', number = 3)#, repeats = 3)
+objModel <- train(df_train[, predictorsNames], df_train[, outcomeName],
+                  method = this_method, trControl = objControl)
+#-----------
+var_importance <- varImp(objModel, scale = T)
+print(var_importance)
+#plot(var_importance)
+#-----------------------------
 # probabilities ("prob") or integer ("raw")
 predictions <- predict(object = objModel, df_test[, predictorsNames], type = 'raw') #type='prob')
 print(postResample(pred = predictions, obs = as.factor(df_test[,outcomeName])))
@@ -221,7 +278,7 @@ df_plot <- as.data.frame(confmat)
 gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
 gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
 gg
-
+#----------------------------
 
 
 
