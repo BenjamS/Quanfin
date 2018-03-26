@@ -21,6 +21,7 @@ tsTrends <- function(in_ts, slope_window = 13,
   #---------------------
   #Rolling slope
   #---------------------
+  #in_ts <- xts_cpVWMA[, "SPY"]
   #per_ema <- 13
   #in_ts <- EMA(xts_cp[, 1], per_ema)
   #in_ts <- in_ts[-c(1:(per_ema - 1))]
@@ -48,6 +49,8 @@ tsTrends <- function(in_ts, slope_window = 13,
   dydx_sd <- EMA(dydx_sd, slope_window)
   mu_ldydx_cv <- mean(ldydx_cv, na.rm = T)
   mu_dydx_mu <- mean(dydx_mu, na.rm = T)
+  sd_dydx_mu <- sd(dydx_mu, na.rm = T)
+  cv_dydx_mu <- sd_dydx_mu / mu_dydx_mu
   #---------------------
   #Identify periods of consecutively positive (for up trends)
   #or negative (for down trends) slope
@@ -105,6 +108,7 @@ tsTrends <- function(in_ts, slope_window = 13,
   df$Ret_pct[ind_dnBeg] <- RetShrt_pct
   df$trendDuration[ind_upBeg] <- timeLong
   df$trendDuration[ind_dnBeg] <- timeShrt
+  #---------------------
   #Flag false start/finishes (but don't drop)
   ind_ind_upBeg_keep <- which(RetLong_pct >= thresh_RetLong_pct)
   ind_upBeg_keep <- ind_upBeg[ind_ind_upBeg_keep]
@@ -116,101 +120,168 @@ tsTrends <- function(in_ts, slope_window = 13,
   n_upBeg_false <- length(ind_upBeg_false)
   #ind_upFin_keep - ind_upBeg_keep
   #ind_upFin_false - ind_upBeg_false
-  timeBetween_up <- ind_upBeg_keep[-1] - ind_upFin_keep[-n_upBeg_keep]
-  ind_ind_BetweenUp_false <- which(timeBetween_up <= 13)
-  ind_upFin_keep[ind_ind_BetweenUp_false] <- ind_upFin_keep[ind_ind_BetweenUp_false + 1]
-  ind_upBeg_keep[ind_ind_BetweenUp_false + 1] <- ind_upBeg_keep[ind_ind_BetweenUp_false + 2]
+  RetLong_mag_keep <- RetLong_mag[ind_ind_upBeg_keep]
+  RetLong_pct_keep <- RetLong_pct[ind_ind_upBeg_keep]
+  timeLong_keep <- ind_upFin_keep - ind_upBeg_keep
+  sum_RetLong_mag_keep <- sum(RetLong_mag_keep)
+  mu_RetLong_mag_keep <- mean(RetLong_mag_keep)
+  sd_RetLong_mag_keep <- sd(RetLong_mag_keep)
+  cv_RetLong_mag_keep <- sd_RetLong_mag_keep / mu_RetLong_mag_keep
+  mu_RetLong_pct_keep <- mean(RetLong_pct_keep)
+  sd_RetLong_pct_keep <- sd(RetLong_pct_keep)
+  cv_RetLong_pct_keep <- sd_RetLong_pct_keep / mu_RetLong_pct_keep
   #--------------
   ind_ind_dnBeg_keep <- which(RetShrt_pct <= thresh_RetShrt_pct)
   ind_dnBeg_keep <- ind_dnBeg[ind_ind_dnBeg_keep]
   ind_dnFin_keep <- ind_dnFin[ind_ind_dnBeg_keep]
   n_dnBeg_keep <- length(ind_dnBeg_keep)
+  n_dnFin_keep <- n_dnBeg_keep
   ind_ind_dnBeg_false <- setdiff(1:n_dnBeg, ind_ind_dnBeg_keep)
   ind_dnBeg_false <- ind_dnBeg[ind_ind_dnBeg_false]
   ind_dnFin_false <- ind_dnFin[ind_ind_dnBeg_false]
   n_dnBeg_false <- length(ind_dnBeg_false)
+  n_dnFin_false <- n_dnBeg_false
   #ind_dnFin_keep - ind_dnBeg_keep
   #ind_dnFin_false - ind_dnBeg_false
+  RetShrt_mag_keep <- RetShrt_mag[ind_ind_dnBeg_keep]
+  RetShrt_pct_keep <- RetShrt_pct[ind_ind_dnBeg_keep]
+  timeShrt_keep <- ind_dnFin_keep - ind_dnBeg_keep
+  sum_RetShrt_mag_keep <- sum(RetShrt_mag_keep)
+  mu_RetShrt_mag_keep <- mean(RetShrt_mag_keep)
+  sd_RetShrt_mag_keep <- sd(RetShrt_mag_keep)
+  cv_RetShrt_mag_keep <- sd_RetShrt_mag_keep / mu_RetShrt_mag_keep
+  mu_RetShrt_pct_keep <- mean(RetShrt_pct_keep)
+  sd_RetShrt_pct_keep <- sd(RetShrt_pct_keep)
+  cv_RetShrt_pct_keep <- sd_RetShrt_pct_keep / mu_RetShrt_pct_keep
   #--
   # df$Ret_pct[ind_dnBeg_keep]
   gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
-  gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
-  gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
+  # gg <- ggplot(df, aes(x = Index, y = dydxmu)) + geom_line()
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
+  gg <- gg + geom_vline(xintercept = df$Index[ind_dnBeg_keep], color = "blue")
+  gg <- gg + geom_vline(xintercept = df$Index[ind_dnFin_keep], color = "orange")
+  #gg <- gg + geom_hline(yintercept = mu_dydx_mu, color = "purple")
   gg
-  #--
-  #Create signal var over "window of opportunity" determined by params
-  #before_window and aft_window. before_window should be greater than aft_window.
+  #---------------
+  #Signals
   #Create signal date var
   df$SigDate <- NA
   df$SigDate[ind_dnBeg] <- df$Index[ind_dnBeg]
   df$SigDate[ind_upBeg] <- df$Index[ind_upBeg]
+  df$SigDate[ind_dnFin] <- df$Index[ind_dnFin]
+  df$SigDate[ind_upFin] <- df$Index[ind_upFin]
+  #Create signal var over "window of opportunity" determined by params
+  #before_window and aft_window. before_window should be greater than aft_window.
+  #----------
+  #Long Sig
+  #----------
   #Hold
-  df$Sig <- "Hold"
+  df$SigLong <- "Hold"
   #Buy/Sell
-  for(i in 1:n_dnBeg_keep){df$Sig[(ind_dnBeg_keep[i] - before_window):(ind_dnBeg_keep[i] + aft_window)] <- "Sell"}
-  for(i in 1:n_upBeg_keep){df$Sig[(ind_upBeg_keep[i] - before_window):(ind_upBeg_keep[i] + aft_window)] <- "Buy"}
+  for(i in 1:n_upFin_keep){df$SigLong[(ind_upFin_keep[i] - before_window):(ind_upFin_keep[i] + aft_window)] <- "Sell"}
+  for(i in 1:n_upBeg_keep){df$SigLong[(ind_upBeg_keep[i] - before_window):(ind_upBeg_keep[i] + aft_window)] <- "Buy"}
+  #Overwrite buy/sell sigs outside pct return thresholds as false signals
+  for(i in 1:n_upFin_false){df$SigLong[(ind_upFin_false[i] - before_window):(ind_upFin_false[i] + aft_window)] <- "False Sell"}
+  for(i in 1:n_upBeg_false){df$SigLong[(ind_upBeg_false[i] - before_window):(ind_upBeg_false[i] + aft_window)] <- "False Buy"}
+  #----------
+  #Short Sig
+  #----------
+  #Hold
+  df$SigShort <- "Hold"
+  for(i in 1:n_dnFin_keep){df$SigShort[(ind_dnFin_keep[i] - before_window):(ind_dnFin_keep[i] + aft_window)] <- "Short"}
+  for(i in 1:n_dnBeg_keep){df$SigShort[(ind_dnBeg_keep[i] - before_window):(ind_dnBeg_keep[i] + aft_window)] <- "Cover"}
   #Overwrite buy/sell sigs outside thresholds as false signals
-  for(i in 1:n_dnBeg_false){df$Sig[(ind_dnBeg_false[i] - before_window):(ind_dnBeg_false[i] + aft_window)] <- "False Sell"}
-  for(i in 1:n_upBeg_false){df$Sig[(ind_upBeg_false[i] - before_window):(ind_upBeg_false[i] + aft_window)] <- "False Buy"}
-  
-  
+  for(i in 1:n_dnFin_false){df$SigShort[(ind_dnFin_false[i] - before_window):(ind_dnFin_false[i] + aft_window)] <- "False Short"}
+  for(i in 1:n_dnBeg_false){df$SigShort[(ind_dnBeg_false[i] - before_window):(ind_dnBeg_false[i] + aft_window)] <- "False Cover"}
+  #------------------------
   #Trim ts to first uptrend start point and last downtrend stop point
   #so that ML training not messed up
-  ind_tsStart <- ind_upBeg[1] - before_window
-  ind_tsFinish <- ind_dnBeg[n_upFin] + aft_window
+  ind_tsStart <- min(ind_upBeg[1], ind_dnBeg[1]) - before_window
+  ind_tsFinish <- max(ind_upFin[n_upFin], ind_dnFin[n_dnFin]) + aft_window
   df <- df[ind_tsStart:ind_tsFinish, ]
   n_ts_trimd <- nrow(df)
-  
-  
-        
-  n_upBeg_raw <- length(ind_upBeg)
-  n_upBeg_filtd <- n_upBeg - n_false_b
-  n_upFin_raw <- length(ind_dnBeg)
-  n_upFin_filtd <- n_upFin - n_false_s
-  
-cat("Raw length of time series: ", n_ts, "\n",
-    "Trimmed length of time series: ", n_ts_trimd, "\n",
-    "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
-    "Num. raw uptrend signals after bookend adjust: ", n_upBeg, "\n",
-    "Num. false uptrend signals: ", n_false_b, "\n",
-    "Num. uptrend signals within time duration/pct change thresholds: ", n_upBeg_filtd, "\n",
-    "Num. raw downtrend signals: ", n_upFin_raw, "\n",
-    "Num. raw downtrend signals after bookend adjust: ", n_upFin, "\n",
-    "Num. false downtrend signals: ", n_false_s, "\n",
-    "Num. downtrend signals within time duration/pct change thresholds: ", n_upFin_filtd, "\n")
   #-----------------------
   #Interesting... the up trend start (buy) points coincide with max ldydxcv points
   #And these are all at about the same value (for SPY anyway)
-  ind_ind_muldydxcvBuy <- which(df$ldydxcv[ind_upBeg] > 0)
-  mu_ldydx_cvBuy <- mean(df$ldydxcv[ind_upBeg[ind_ind_muldydxcvBuy]])
-  sd_ldydx_cvBuy <- sd(df$ldydxcv[ind_upBeg[ind_ind_muldydxcvBuy]])
+  ind_ind_muldydxcv_up <- which(df$ldydxcv[ind_upBeg_keep] > 0)
+  mu_ldydx_cv_up <- mean(df$ldydxcv[ind_upBeg_keep[ind_ind_muldydxcv_up]])
+  sd_ldydx_cv_up <- sd(df$ldydxcv[ind_upBeg[ind_ind_muldydxcv_up]])
+  #
+  mu_dydx_mu_up <- mean(df$dydxmu[ind_upBeg_keep])
+  sd_dydx_mu_up <- sd(df$dydxmu[ind_upBeg_keep])
+  cv_dydx_mu_up <- sd_dydx_mu_up / mu_dydx_mu_up
+  #
+  mu_dydx_mu_dn <- mean(df$dydxmu[ind_dnBeg_keep])
+  sd_dydx_mu_dn <- sd(df$dydxmu[ind_dnBeg_keep])
+  cv_dydx_mu_dn <- sd_dydx_mu_dn / mu_dydx_mu_dn
   #---------------------------------
-  out_RetMagSum <- sum(df$RetLong_mag, na.rm = T)
-  out_RetMagMu <- mean(df$RetLong_mag, na.rm = T)
-  out_RetMagSd <- sd(df$RetLong_mag, na.rm = T)
-  out_RetPctMu <- mean(df$RetLong_pct, na.rm = T)    
-  out_RetPctSd <- sd(df$RetLong_pct, na.rm = T)
-  sd_dydx_mu <- sd(dydx_mu, na.rm = T)
-  outVars <- data.frame(muLdydxCVbuy = mu_ldydx_cvBuy, 
-                        sdLdydxCVbuy = sd_ldydx_cvBuy,
-                        mudydx = mu_dydx_mu,
-                        sddydx = sd_dydx_mu,
-                        RetMagSum = out_RetMagSum,
-                        RetMagMu = out_RetMagMu,
-                        RetMagSd = out_RetMagSd,
-                        RetPctMu = out_RetPctMu,
-                        RetPctSd = out_RetPctSd,
-                        n_uptrends = n_upBeg)
+  
+  outVars <- data.frame(
+    n_uptrends_kept = n_upBeg_keep,
+    n_downtrends_kept = n_dnBeg_keep,
+    n_uptrends_false = n_upBeg_false,
+    n_downtrends_false = n_dnBeg_false,
+
+    mudydx = mu_dydx_mu,
+    cvdydx = cv_dydx_mu,
+    mudydxup = mu_dydx_mu_up,
+    cvdydxup = cv_dydx_mu_up,
+    mudydxdn = mu_dydx_mu_dn,
+    cvdydxdn = cv_dydx_mu_dn,
+    
+    muLdydxCVup = mu_ldydx_cv_up, 
+    sdLdydxCVup = sd_ldydx_cv_up,
+
+    RetMagUp_sum = sum_RetLong_mag_keep,
+    RetMagUp_mu = mu_RetLong_mag_keep,
+    RetMagUp_cv = cv_RetLong_mag_keep,
+    RetPctUp_mu = mu_RetLong_pct_keep,
+    RetPctUp_cv = cv_RetLong_pct_keep,
+    
+    RetMagDown_sum = sum_RetShrt_mag_keep,
+    RetMagDown_mu = mu_RetShrt_mag_keep,
+    RetMagDown_cv = cv_RetShrt_mag_keep,
+    RetPctDown_mu = mu_RetShrt_pct_keep,
+    RetPctDown_cv = cv_RetShrt_pct_keep
+  )
+  
+  #---------------------------------
+  cat("Raw length of time series: ", n_ts, "\n",
+      "Trimmed length of time series: ", n_ts_trimd, "\n",
+      "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
+      "Num. raw downtrend signals: ", n_upFin_raw, "\n",
+      "Num. raw uptrend signals after bookend adjust: ", n_upBeg, "\n",
+      "Num. raw downtrend signals after bookend adjust: ", n_dnBeg, "\n",
+      "Num. false uptrend signals: ", n_upBeg_false, "\n",
+      "Num. false downtrend signals: ", n_dnBeg_false, "\n",
+      "Num. uptrend signals within pct change thresholds (kept): ", n_upBeg_keep, "\n",
+      "Num. downtrend signals within pct change thresholds (kept): ", n_dnBeg_keep, "\n",
+      "Sum of all kept uptrends: ", sum_RetLong_mag_keep, "\n",
+      "Sum of all kept downtrends: ", sum_RetShrt_mag_keep, "\n",
+      "Mean change kept uptrends: ", mu_RetLong_mag_keep, "\n",
+      "Mean change kept downtrends: ", mu_RetShrt_mag_keep, "\n",
+      "Mean pct. change kept uptrends: ", mu_RetLong_pct_keep, "\n",
+      "Mean pct. change kept downtrends: ", mu_RetShrt_pct_keep, "\n",
+      "CV change kept uptrends: ", cv_RetLong_mag_keep, "\n",
+      "CV change kept downtrends: ", cv_RetShrt_mag_keep, "\n",
+      "Mean slope: ", mu_dydx_mu, "\n",
+      "CV slope: ", cv_dydx_mu, "\n",
+      "Mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
+      "CV slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
+      "Mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
+      "CV slope at kept downtrend starts: ", cv_dydx_mu_dn
+  )
+  
   #---------------------------------
   #Output df with the original ts and its rolling slope series (mean, sd, cv),
   #buy/sell binary var, etc.
-  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "Sig")]
+  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDate", "SigLong", "SigShort")]
   #Output df with only trend start/finish (buy/sell) point data
   ind_trndBegEnd <- unique(c(which(is.na(df$BuysigDate) == F), which(is.na(df$SelsigDate) == F)))
   df_tsCritPoints <- df[ind_trndBegEnd, 
-                        c("Index", "RetLong_pct", "RetShrt_pct", "RetLong_mag",
-                          "RetShrt_mag", "timeLong", "timeShrt", "dydxmu",
-                          "dydxsd", "ldydxcv")]
+                        c("Index", "SigDate", "SigLong", "SigShort", "ts", "dydxmu", "dydxsd", "ldydxcv",
+                          "Ret_mag", "Ret_pct", "trendDuration")]
   df_tsCritPoints <- df_tsCritPoints[order(df_tsCritPoints$Index), ]
   #=================================
   #2 Graphs
@@ -238,7 +309,7 @@ cat("Raw length of time series: ", n_ts, "\n",
     gg <- gg + geom_point(aes(x = BuysigDate, y = value, size = RetLong_pct), color = "green")
     gg <- gg + facet_wrap(~ts_type, ncol = 1, scales = "free")
     gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu, ts_type = "dydxmu"), aes(yintercept = yint), linetype = "dotted")
-    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cvBuy, ts_type = "ldydxcv"), aes(yintercept = yint), linetype = "dotted")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), linetype = "dotted")
     print(gg)
   }
   #=================================
