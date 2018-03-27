@@ -114,10 +114,12 @@ tsTrends <- function(in_ts, slope_window = 13,
   ind_upBeg_keep <- ind_upBeg[ind_ind_upBeg_keep]
   ind_upFin_keep <- ind_upFin[ind_ind_upBeg_keep]
   n_upBeg_keep <- length(ind_upBeg_keep)
+  n_upFin_keep <- n_upBeg_keep
   ind_ind_upBeg_false <- setdiff(1:n_upBeg, ind_ind_upBeg_keep)
   ind_upBeg_false <- ind_upBeg[ind_ind_upBeg_false]
   ind_upFin_false <- ind_upFin[ind_ind_upBeg_false]
   n_upBeg_false <- length(ind_upBeg_false)
+  n_upFin_false <- n_upBeg_false
   #ind_upFin_keep - ind_upBeg_keep
   #ind_upFin_false - ind_upBeg_false
   RetLong_mag_keep <- RetLong_mag[ind_ind_upBeg_keep]
@@ -157,20 +159,24 @@ tsTrends <- function(in_ts, slope_window = 13,
   # df$Ret_pct[ind_dnBeg_keep]
   gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
   # gg <- ggplot(df, aes(x = Index, y = dydxmu)) + geom_line()
-  # gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
-  # gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
-  gg <- gg + geom_vline(xintercept = df$Index[ind_dnBeg_keep], color = "blue")
-  gg <- gg + geom_vline(xintercept = df$Index[ind_dnFin_keep], color = "orange")
+  gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
+  gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_dnBeg_keep], color = "blue")
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_dnFin_keep], color = "orange")
   #gg <- gg + geom_hline(yintercept = mu_dydx_mu, color = "purple")
   gg
   #---------------
   #Signals
-  #Create signal date var
-  df$SigDate <- NA
-  df$SigDate[ind_dnBeg] <- df$Index[ind_dnBeg]
-  df$SigDate[ind_upBeg] <- df$Index[ind_upBeg]
-  df$SigDate[ind_dnFin] <- df$Index[ind_dnFin]
-  df$SigDate[ind_upFin] <- df$Index[ind_upFin]
+  #Create signal type var for subsetting
+  df$SigType <- NA
+  df$SigType[ind_upBeg_keep] <- "Uptrend Start"
+  df$SigType[ind_upFin_keep] <- "Uptrend Stop"
+  df$SigType[ind_upBeg_false] <- "Uptrend False Start"
+  df$SigType[ind_upFin_false] <- "Uptrend False Stop"
+  df$SigType[ind_dnBeg_keep] <- "Downtrend Start"
+  df$SigType[ind_dnFin_keep] <- "Downtrend Stop"
+  df$SigType[ind_dnBeg_false] <- "Downtrend False Start"
+  df$SigType[ind_dnFin_false] <- "Downtrend False Stop"
   #Create signal var over "window of opportunity" determined by params
   #before_window and aft_window. before_window should be greater than aft_window.
   #----------
@@ -207,6 +213,7 @@ tsTrends <- function(in_ts, slope_window = 13,
   ind_ind_muldydxcv_up <- which(df$ldydxcv[ind_upBeg_keep] > 0)
   mu_ldydx_cv_up <- mean(df$ldydxcv[ind_upBeg_keep[ind_ind_muldydxcv_up]])
   sd_ldydx_cv_up <- sd(df$ldydxcv[ind_upBeg[ind_ind_muldydxcv_up]])
+  cv_ldydx_cv_up <- sd_ldydx_cv_up / mu_ldydx_cv_up
   #
   mu_dydx_mu_up <- mean(df$dydxmu[ind_upBeg_keep])
   sd_dydx_mu_up <- sd(df$dydxmu[ind_upBeg_keep])
@@ -231,7 +238,7 @@ tsTrends <- function(in_ts, slope_window = 13,
     cvdydxdn = cv_dydx_mu_dn,
     
     muLdydxCVup = mu_ldydx_cv_up, 
-    sdLdydxCVup = sd_ldydx_cv_up,
+    cvLdydxCVup = cv_ldydx_cv_up,
 
     RetMagUp_sum = sum_RetLong_mag_keep,
     RetMagUp_mu = mu_RetLong_mag_keep,
@@ -265,19 +272,29 @@ tsTrends <- function(in_ts, slope_window = 13,
       "Mean pct. change kept downtrends: ", mu_RetShrt_pct_keep, "\n",
       "CV change kept uptrends: ", cv_RetLong_mag_keep, "\n",
       "CV change kept downtrends: ", cv_RetShrt_mag_keep, "\n",
-      "Mean slope: ", mu_dydx_mu, "\n",
-      "CV slope: ", cv_dydx_mu, "\n",
-      "Mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
-      "CV slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
-      "Mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
-      "CV slope at kept downtrend starts: ", cv_dydx_mu_dn
+      "Mean rolling mean slope: ", mu_dydx_mu, "\n",
+      "CV roling mean slope: ", cv_dydx_mu, "\n",
+      "Mean rolling mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
+      "CV rolling mean slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
+      "Mean rolling mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
+      "CV rolling mean slope at kept downtrend starts: ", cv_dydx_mu_dn, "\n",
+      "Mean logged rolling cv of (abs val of) slope at kept uptrend starts: ", mu_ldydx_cv_up, "\n",
+      "CV logged rolling cv of (abs val of) slope at kept uptrend starts: ", cv_ldydx_cv_up
   )
-  
   #---------------------------------
   #Output df with the original ts and its rolling slope series (mean, sd, cv),
-  #buy/sell binary var, etc.
-  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDate", "SigLong", "SigShort")]
+  #and signal vars.
+  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigLong", "SigShort", "SigType")]
   #Output df with only trend start/finish (buy/sell) point data
+  df_ts_dnEvents <- df[which(df$), c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigLong", "SigShort", "SigType")]
+  
+  
+  df_ts_upEvents <- subset(df, SigType %in% c("Uptrend Start", "Uptrend Stop"))
+  df_ts_dnEvents <- subset(df, SigType %in% c("Downtrend Start", "Downtrend Stop"))
+  
+  # df_ts_dnEvents <- df_ts_dnEvents %>% spread(SigType, )
+  # df_ts_upEvents <- df_ts_upEvents
+  
   ind_trndBegEnd <- unique(c(which(is.na(df$BuysigDate) == F), which(is.na(df$SelsigDate) == F)))
   df_tsCritPoints <- df[ind_trndBegEnd, 
                         c("Index", "SigDate", "SigLong", "SigShort", "ts", "dydxmu", "dydxsd", "ldydxcv",
