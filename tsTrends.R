@@ -11,7 +11,7 @@ tsTrends <- function(in_ts, slope_window = 13,
   #---------------------
   #Make sure required packages are loaded
   #---------------------
-  required_packages <- c("pracma", "ggplot2", "plyr", "tidyr", "quantmod")
+  required_packages <- c("pracma", "ggplot2", "plyr", "tidyr", "quantmod", "ggpubr")
   lapply(required_packages, FUN = function(x) {
     if (!require(x, character.only = TRUE)) {
       install.packages(x, dependencies = TRUE)
@@ -168,45 +168,39 @@ tsTrends <- function(in_ts, slope_window = 13,
   #---------------
   #Signals
   #Create signal type var for subsetting
-  df$SigType <- NA
-  df$SigType[ind_upBeg_keep] <- "Uptrend Start"
-  df$SigType[ind_upFin_keep] <- "Uptrend Stop"
-  df$SigType[ind_upBeg_false] <- "Uptrend False Start"
-  df$SigType[ind_upFin_false] <- "Uptrend False Stop"
-  df$SigType[ind_dnBeg_keep] <- "Downtrend Start"
-  df$SigType[ind_dnFin_keep] <- "Downtrend Stop"
-  df$SigType[ind_dnBeg_false] <- "Downtrend False Start"
-  df$SigType[ind_dnFin_false] <- "Downtrend False Stop"
+  df$SigUp <- NA
+  df$SigUp[ind_upBeg_keep] <- "Uptrend Start"
+  df$SigUp[ind_upFin_keep] <- "Uptrend Stop"
+  df$SigUp[ind_upBeg_false] <- "Uptrend False Start"
+  df$SigUp[ind_upFin_false] <- "Uptrend False Stop"
+  df$SigDown <- NA
+  df$SigDown[ind_dnBeg_keep] <- "Downtrend Start"
+  df$SigDown[ind_dnFin_keep] <- "Downtrend Stop"
+  df$SigDown[ind_dnBeg_false] <- "Downtrend False Start"
+  df$SigDown[ind_dnFin_false] <- "Downtrend False Stop"
   #Create signal var over "window of opportunity" determined by params
   #before_window and aft_window. before_window should be greater than aft_window.
   #----------
   #Long Sig
   #----------
   #Hold
-  df$SigLong <- "Hold"
+  df$SigUpWin <- "Hold"
   #Buy/Sell
-  for(i in 1:n_upFin_keep){df$SigLong[(ind_upFin_keep[i] - before_window):(ind_upFin_keep[i] + aft_window)] <- "Sell"}
-  for(i in 1:n_upBeg_keep){df$SigLong[(ind_upBeg_keep[i] - before_window):(ind_upBeg_keep[i] + aft_window)] <- "Buy"}
+  for(i in 1:n_upFin_keep){df$SigUpWin[(ind_upFin_keep[i] - before_window):(ind_upFin_keep[i] + aft_window)] <- "Uptrend Stop"}
+  for(i in 1:n_upBeg_keep){df$SigUpWin[(ind_upBeg_keep[i] - before_window):(ind_upBeg_keep[i] + aft_window)] <- "Uptrend Start"}
   #Overwrite buy/sell sigs outside pct return thresholds as false signals
-  for(i in 1:n_upFin_false){df$SigLong[(ind_upFin_false[i] - before_window):(ind_upFin_false[i] + aft_window)] <- "False Sell"}
-  for(i in 1:n_upBeg_false){df$SigLong[(ind_upBeg_false[i] - before_window):(ind_upBeg_false[i] + aft_window)] <- "False Buy"}
+  for(i in 1:n_upFin_false){df$SigUpWin[(ind_upFin_false[i] - before_window):(ind_upFin_false[i] + aft_window)] <- "Uptrend False Stop"}
+  for(i in 1:n_upBeg_false){df$SigUpWin[(ind_upBeg_false[i] - before_window):(ind_upBeg_false[i] + aft_window)] <- "Uptrend False Start"}
   #----------
   #Short Sig
   #----------
   #Hold
-  df$SigShort <- "Hold"
-  for(i in 1:n_dnFin_keep){df$SigShort[(ind_dnFin_keep[i] - before_window):(ind_dnFin_keep[i] + aft_window)] <- "Short"}
-  for(i in 1:n_dnBeg_keep){df$SigShort[(ind_dnBeg_keep[i] - before_window):(ind_dnBeg_keep[i] + aft_window)] <- "Cover"}
+  df$SigDownWin <- "Hold"
+  for(i in 1:n_dnFin_keep){df$SigDownWin[(ind_dnFin_keep[i] - before_window):(ind_dnFin_keep[i] + aft_window)] <- "Downtrend Start"}
+  for(i in 1:n_dnBeg_keep){df$SigDownWin[(ind_dnBeg_keep[i] - before_window):(ind_dnBeg_keep[i] + aft_window)] <- "Downtrend Stop"}
   #Overwrite buy/sell sigs outside thresholds as false signals
-  for(i in 1:n_dnFin_false){df$SigShort[(ind_dnFin_false[i] - before_window):(ind_dnFin_false[i] + aft_window)] <- "False Short"}
-  for(i in 1:n_dnBeg_false){df$SigShort[(ind_dnBeg_false[i] - before_window):(ind_dnBeg_false[i] + aft_window)] <- "False Cover"}
-  #------------------------
-  #Trim ts to first uptrend start point and last downtrend stop point
-  #so that ML training not messed up
-  ind_tsStart <- min(ind_upBeg[1], ind_dnBeg[1]) - before_window
-  ind_tsFinish <- max(ind_upFin[n_upFin], ind_dnFin[n_dnFin]) + aft_window
-  df <- df[ind_tsStart:ind_tsFinish, ]
-  n_ts_trimd <- nrow(df)
+  for(i in 1:n_dnFin_false){df$SigDownWin[(ind_dnFin_false[i] - before_window):(ind_dnFin_false[i] + aft_window)] <- "Downtrend False Start"}
+  for(i in 1:n_dnBeg_false){df$SigDownWin[(ind_dnBeg_false[i] - before_window):(ind_dnBeg_false[i] + aft_window)] <- "Downtrend False Stop"}
   #-----------------------
   #Interesting... the up trend start (buy) points coincide with max ldydxcv points
   #And these are all at about the same value (for SPY anyway)
@@ -223,13 +217,19 @@ tsTrends <- function(in_ts, slope_window = 13,
   sd_dydx_mu_dn <- sd(df$dydxmu[ind_dnBeg_keep])
   cv_dydx_mu_dn <- sd_dydx_mu_dn / mu_dydx_mu_dn
   #---------------------------------
-  
+  #Trim ts to first uptrend start point and last downtrend stop point
+  #so that ML training not messed up
+  ind_tsStart <- min(ind_upBeg[1], ind_dnBeg[1]) - before_window
+  ind_tsFinish <- max(ind_upFin[n_upFin], ind_dnFin[n_dnFin]) + aft_window
+  df <- df[ind_tsStart:ind_tsFinish, ]
+  n_ts_trimd <- nrow(df)
+  #---------------------------------
   outVars <- data.frame(
     n_uptrends_kept = n_upBeg_keep,
     n_downtrends_kept = n_dnBeg_keep,
     n_uptrends_false = n_upBeg_false,
     n_downtrends_false = n_dnBeg_false,
-
+    
     mudydx = mu_dydx_mu,
     cvdydx = cv_dydx_mu,
     mudydxup = mu_dydx_mu_up,
@@ -239,7 +239,7 @@ tsTrends <- function(in_ts, slope_window = 13,
     
     muLdydxCVup = mu_ldydx_cv_up, 
     cvLdydxCVup = cv_ldydx_cv_up,
-
+    
     RetMagUp_sum = sum_RetLong_mag_keep,
     RetMagUp_mu = mu_RetLong_mag_keep,
     RetMagUp_cv = cv_RetLong_mag_keep,
@@ -285,33 +285,101 @@ tsTrends <- function(in_ts, slope_window = 13,
   #Output df with the original ts and its rolling slope series (mean, sd, cv),
   #and signal vars.
   df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigLong", "SigShort", "SigType")]
-  #Output df with only trend start/finish (buy/sell) point data
-  df_ts_dnEvents <- df[which(df$), c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigLong", "SigShort", "SigType")]
-  
-  
-  df_ts_upEvents <- subset(df, SigType %in% c("Uptrend Start", "Uptrend Stop"))
-  df_ts_dnEvents <- subset(df, SigType %in% c("Downtrend Start", "Downtrend Stop"))
-  
-  # df_ts_dnEvents <- df_ts_dnEvents %>% spread(SigType, )
-  # df_ts_upEvents <- df_ts_upEvents
-  
-  ind_trndBegEnd <- unique(c(which(is.na(df$BuysigDate) == F), which(is.na(df$SelsigDate) == F)))
-  df_tsCritPoints <- df[ind_trndBegEnd, 
-                        c("Index", "SigDate", "SigLong", "SigShort", "ts", "dydxmu", "dydxsd", "ldydxcv",
-                          "Ret_mag", "Ret_pct", "trendDuration")]
-  df_tsCritPoints <- df_tsCritPoints[order(df_tsCritPoints$Index), ]
+  #Output dfs with only trend start/finish (buy/sell) point data
+  df_ts_upEvents <- subset(df, SigUp %in% c("Uptrend Start"))
+  df_ts_upEvents <- df_ts_upEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUp")]
+  df_ts_dnEvents <- subset(df, SigDown %in% c("Downtrend Start"))
+  df_ts_dnEvents <- df_ts_dnEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDown")]
   #=================================
-  #2 Graphs
+  #3 Graphs
   if(quietly == F){
+    df_plot <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration")]
+    df_plot$Ret_pct <- df_plot$Ret_pct * 100
+    df_plot$SigUpStartDate <- df_plot$Index
+    ind_UptrendStart <- which(df$SigUp == "Uptrend Start")
+    df_plot$SigUpStartDate[-ind_UptrendStart] <- NA
+    df_plot$SigUpStopDate <- df_plot$Index
+    ind_UptrendStop <- which(df$SigUp == "Uptrend Stop")
+    df_plot$SigUpStopDate[-ind_UptrendStop] <- NA
+    df_plot$Ret_pct[-ind_UptrendStart] <- NA
+    df_plot$trendDuration[-ind_UptrendStart] <- NA
+    for(i in 1:length(ind_UptrendStart)){
+      df_plot$Ret_pct[ind_UptrendStart[i]:ind_UptrendStop[i]] <- 
+        df_plot$Ret_pct[ind_UptrendStart[i]]
+      df_plot$trendDuration[ind_UptrendStart[i]:ind_UptrendStop[i]] <- 
+        df_plot$trendDuration[ind_UptrendStart[i]]
+      }
+    df_plot$`Pct Ret./Time` <- df_plot$Ret_pct / df_plot$trendDuration
+    #--
     #Plot of just the ts with trend start/finish (buy/sell) points overlaid
-    df_plot <- df[, c("Index", "BuysigDate", "SelsigDate", "RetLong_pct",
-                      "RetShrt_pct", "RetLong_mag", "RetShrt_mag",
-                      "ts_up", "ts_dn")]
-    df_plot <- df_plot %>% gather(trends, value, ts_up:ts_dn)
-    gg <- ggplot(df_plot, aes(x = Index, y = value, group = trends, color = trends))
-    gg <- gg + geom_line()
-    gg <- gg + geom_point(aes(x = SelsigDate, y = value, size = RetShrt_pct), color = "red")
-    gg <- gg + geom_point(aes(x = BuysigDate, y = value, size = RetLong_pct), color = "green")
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plot, aes(x = SigUpStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plot, aes(x = SigUpStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plot$Index[ind_UptrendStart], xmax = df_plot$Index[ind_UptrendStop],
+                         ymin = -Inf, ymax = Inf, fill = "Uptrends"), alpha = 0.3)
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank())
+    gg <- gg + ylab("Time Series")
+    gg <- gg + scale_fill_manual("",
+                                 values = "green",
+                                 guide = guide_legend(override.aes = list(alpha = 1))) 
+    gg1 <- gg
+    #--
+    #Accompanying plot of the pct return, shaded to reflect pct ret./time also
+    gg <- ggplot(df_plot, aes(x = Index, y = Ret_pct))
+    gg <- gg + geom_segment(aes(xend = Index, yend = 0, color = `Pct Ret./Time`))
+    gg <- gg + xlab("Date") + ylab("Pct Return")
+    gg2 <- gg
+    #--
+    #Arrange these plots into one display
+    gg <- ggarrange(gg1, gg2, ncol = 1, nrow = 2, align = "v")
+    print(gg)
+    #-----------------------
+    #Do same for down trends
+    df_plot <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration")]
+    df_plot$Ret_pct <- df_plot$Ret_pct * 100
+    df_plot$SigDownStartDate <- df_plot$Index
+    ind_DowntrendStart <- which(df$SigDown == "Downtrend Start")
+    df_plot$SigDownStartDate[-ind_DowntrendStart] <- NA
+    df_plot$SigDownStopDate <- df_plot$Index
+    ind_DowntrendStop <- which(df$SigDown == "Downtrend Stop")
+    df_plot$SigDownStopDate[-ind_DowntrendStop] <- NA
+    df_plot$Ret_pct[-ind_DowntrendStart] <- NA
+    df_plot$trendDuration[-ind_DowntrendStart] <- NA
+    for(i in 1:length(ind_DowntrendStart)){
+      df_plot$Ret_pct[ind_DowntrendStart[i]:ind_DowntrendStop[i]] <- 
+        df_plot$Ret_pct[ind_DowntrendStart[i]]
+      df_plot$trendDuration[ind_DowntrendStart[i]:ind_DowntrendStop[i]] <- 
+        df_plot$trendDuration[ind_DowntrendStart[i]]
+    }
+    df_plot$`Pct Ret./Time` <- df_plot$Ret_pct / df_plot$trendDuration
+    #--
+    #Plot of just the ts with trend start/finish (buy/sell) points overlaid
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plot, aes(x = SigDownStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plot, aes(x = SigDownStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plot$Index[ind_DowntrendStart], xmax = df_plot$Index[ind_DowntrendStop],
+                             ymin = -Inf, ymax = Inf, fill = "Downtrends"), alpha = 0.3)
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank())
+    gg <- gg + ylab("Time Series")
+    gg <- gg + scale_fill_manual("",
+                                 values = "green",
+                                 guide = guide_legend(override.aes = list(alpha = 1))) 
+    gg1 <- gg
+    #--
+    #Accompanying plot of the pct return, shaded to reflect pct ret./time also
+    gg <- ggplot(df_plot, aes(x = Index, y = Ret_pct))
+    gg <- gg + geom_segment(aes(xend = Index, yend = 0, color = `Pct Ret./Time`))
+    gg <- gg + xlab("Date") + ylab("Pct Return")
+    gg2 <- gg
+    #--
+    #Arrange these plots into one display
+    gg <- ggarrange(gg1, gg2, ncol = 1, nrow = 2, align = "v")
     print(gg)
     #-----------------------
     #Plot roling slope (mean, sd, and cv) with trend start/finish (buy/sell) points overlaid
