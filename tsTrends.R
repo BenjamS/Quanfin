@@ -21,7 +21,7 @@ tsTrends <- function(in_ts, slope_window = 13,
   #---------------------
   #Rolling slope
   #---------------------
-  #in_ts <- xts_cpVWMA[, "SPY"]
+  #in_ts <- xts_cpVWMA[-n_ts, "SPY"]
   #per_ema <- 13
   #in_ts <- EMA(xts_cp[, 1], per_ema)
   #in_ts <- in_ts[-c(1:(per_ema - 1))]
@@ -157,14 +157,14 @@ tsTrends <- function(in_ts, slope_window = 13,
   cv_RetShrt_pct_keep <- sd_RetShrt_pct_keep / mu_RetShrt_pct_keep
   #--
   # df$Ret_pct[ind_dnBeg_keep]
-  gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
-  # gg <- ggplot(df, aes(x = Index, y = dydxmu)) + geom_line()
-  gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
-  gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
-  # gg <- gg + geom_vline(xintercept = df$Index[ind_dnBeg_keep], color = "blue")
-  # gg <- gg + geom_vline(xintercept = df$Index[ind_dnFin_keep], color = "orange")
-  #gg <- gg + geom_hline(yintercept = mu_dydx_mu, color = "purple")
-  gg
+  # gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
+  # # gg <- ggplot(df, aes(x = Index, y = dydxmu)) + geom_line()
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_upBeg_keep], color = "green")
+  # gg <- gg + geom_vline(xintercept = df$Index[ind_upFin_keep], color = "red")
+  # # gg <- gg + geom_vline(xintercept = df$Index[ind_dnBeg_keep], color = "blue")
+  # # gg <- gg + geom_vline(xintercept = df$Index[ind_dnFin_keep], color = "orange")
+  # #gg <- gg + geom_hline(yintercept = mu_dydx_mu, color = "purple")
+  # gg
   #---------------
   #Signals
   #Create signal type var for subsetting
@@ -254,6 +254,16 @@ tsTrends <- function(in_ts, slope_window = 13,
   )
   
   #---------------------------------
+  #Output df with the original ts and its rolling slope series (mean, sd, cv),
+  #and signal vars.
+  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUpWin", "SigDownWin")]
+  #Output dfs with only trend start/finish (buy/sell) point data
+  df_ts_upEvents <- subset(df, SigUp %in% c("Uptrend Start"))
+  df_ts_upEvents <- df_ts_upEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUp")]
+  df_ts_dnEvents <- subset(df, SigDown %in% c("Downtrend Start"))
+  df_ts_dnEvents <- df_ts_dnEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDown")]
+  #===================================================
+  if(quietly == F){
   cat("Raw length of time series: ", n_ts, "\n",
       "Trimmed length of time series: ", n_ts_trimd, "\n",
       "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
@@ -281,123 +291,154 @@ tsTrends <- function(in_ts, slope_window = 13,
       "Mean logged rolling cv of (abs val of) slope at kept uptrend starts: ", mu_ldydx_cv_up, "\n",
       "CV logged rolling cv of (abs val of) slope at kept uptrend starts: ", cv_ldydx_cv_up
   )
-  #---------------------------------
-  #Output df with the original ts and its rolling slope series (mean, sd, cv),
-  #and signal vars.
-  df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigLong", "SigShort", "SigType")]
-  #Output dfs with only trend start/finish (buy/sell) point data
-  df_ts_upEvents <- subset(df, SigUp %in% c("Uptrend Start"))
-  df_ts_upEvents <- df_ts_upEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUp")]
-  df_ts_dnEvents <- subset(df, SigDown %in% c("Downtrend Start"))
-  df_ts_dnEvents <- df_ts_dnEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDown")]
-  #=================================
-  #3 Graphs
-  if(quietly == F){
-    df_plot <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration")]
-    df_plot$Ret_pct <- df_plot$Ret_pct * 100
-    df_plot$SigUpStartDate <- df_plot$Index
+  #===================================================
+  #4 Graphs
+  #===================================================
+  #===================================================
+  #1
+    df_plotUp <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration", "dydxmu", "dydxsd", "ldydxcv")]
+    df_plotUp$Ret_pct <- df_plotUp$Ret_pct * 100
+    df_plotUp$SigUpStartDate <- df_plotUp$Index
     ind_UptrendStart <- which(df$SigUp == "Uptrend Start")
-    df_plot$SigUpStartDate[-ind_UptrendStart] <- NA
-    df_plot$SigUpStopDate <- df_plot$Index
+    df_plotUp$SigUpStartDate[-ind_UptrendStart] <- NA
+    df_plotUp$SigUpStopDate <- df_plotUp$Index
     ind_UptrendStop <- which(df$SigUp == "Uptrend Stop")
-    df_plot$SigUpStopDate[-ind_UptrendStop] <- NA
-    df_plot$Ret_pct[-ind_UptrendStart] <- NA
-    df_plot$trendDuration[-ind_UptrendStart] <- NA
-    for(i in 1:length(ind_UptrendStart)){
-      df_plot$Ret_pct[ind_UptrendStart[i]:ind_UptrendStop[i]] <- 
-        df_plot$Ret_pct[ind_UptrendStart[i]]
-      df_plot$trendDuration[ind_UptrendStart[i]:ind_UptrendStop[i]] <- 
-        df_plot$trendDuration[ind_UptrendStart[i]]
-      }
-    df_plot$`Pct Ret./Time` <- df_plot$Ret_pct / df_plot$trendDuration
+    df_plotUp$SigUpStopDate[-ind_UptrendStop] <- NA
+    df_plotUp$Ret_pct[-ind_UptrendStart] <- NA
+    df_plotUp$trendDuration[-ind_UptrendStart] <- NA
+    df_plotUp$`Pct Change/Time` <- df_plotUp$Ret_pct / df_plotUp$trendDuration
     #--
     #Plot of just the ts with trend start/finish (buy/sell) points overlaid
     gg <- ggplot()
-    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = ts))
-    gg <- gg + geom_point(data = df_plot, aes(x = SigUpStartDate, y = ts), color = "green")
-    gg <- gg + geom_point(data = df_plot, aes(x = SigUpStopDate, y = ts), color = "red")
-    gg <- gg + geom_rect(aes(xmin = df_plot$Index[ind_UptrendStart], xmax = df_plot$Index[ind_UptrendStop],
-                         ymin = -Inf, ymax = Inf, fill = "Uptrends"), alpha = 0.3)
+    gg <- gg + geom_line(data = df_plotUp, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plotUp, aes(x = SigUpStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plotUp, aes(x = SigUpStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plotUp$Index[ind_UptrendStart], xmax = df_plotUp$Index[ind_UptrendStop],
+                             ymin = -Inf, ymax = Inf, fill = "Uptrends"), alpha = 0.3)
     gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x=element_blank(),
                      axis.ticks.x=element_blank())
     gg <- gg + ylab("Time Series")
-    gg <- gg + scale_fill_manual("",
-                                 values = "green",
-                                 guide = guide_legend(override.aes = list(alpha = 1))) 
-    gg1 <- gg
+    gg <- gg + scale_fill_manual("", values = "green", guide = guide_legend(override.aes = list(alpha = 1))) 
+#    gg <- gg + theme_light()
+    gg_Up1 <- gg
     #--
-    #Accompanying plot of the pct return, shaded to reflect pct ret./time also
-    gg <- ggplot(df_plot, aes(x = Index, y = Ret_pct))
-    gg <- gg + geom_segment(aes(xend = Index, yend = 0, color = `Pct Ret./Time`))
-    gg <- gg + xlab("Date") + ylab("Pct Return")
-    gg2 <- gg
+    #Accompanying plot of the pct change, shaded to reflect pct change/time also
+    df_plotUp_ret <- data.frame(xmin = df_plotUp$SigUpStartDate[ind_UptrendStart],
+                              xmax = df_plotUp$SigUpStopDate[ind_UptrendStop],
+                              ymin = 0, ymax = df_plotUp$Ret_pct[ind_UptrendStart], 
+                              pctch_per_time = df_plotUp$`Pct Change/Time`[ind_UptrendStart])
+    colnames(df_plotUp_ret)[ncol(df_plotUp_ret)] <- "Pct Change/Time"
+    df_plotUp$zero <- 0
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plotUp, aes(x = Index, y = zero))
+    gg <- gg + geom_rect(data = df_plotUp_ret,
+              aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
+    gg <- gg + scale_fill_gradient(low = "white", high = "green")
+    gg <- gg + ylab("Pct Change")
+#    gg <- gg + theme_light()
+    gg_Up2 <- gg
     #--
     #Arrange these plots into one display
-    gg <- ggarrange(gg1, gg2, ncol = 1, nrow = 2, align = "v")
-    print(gg)
-    #-----------------------
+    gg1 <- ggarrange(gg_Up1, gg_Up2, ncol = 1, nrow = 2, align = "v")
+    #print(gg1)
+    #===================================================
+    #2
     #Do same for down trends
-    df_plot <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration")]
-    df_plot$Ret_pct <- df_plot$Ret_pct * 100
-    df_plot$SigDownStartDate <- df_plot$Index
+    df_plotDn <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration", "dydxmu", "dydxsd", "ldydxcv")]
+    df_plotDn$Ret_pct <- df_plotDn$Ret_pct * 100
+    df_plotDn$SigDownStartDate <- df_plotDn$Index
     ind_DowntrendStart <- which(df$SigDown == "Downtrend Start")
-    df_plot$SigDownStartDate[-ind_DowntrendStart] <- NA
-    df_plot$SigDownStopDate <- df_plot$Index
+    df_plotDn$SigDownStartDate[-ind_DowntrendStart] <- NA
+    df_plotDn$SigDownStopDate <- df_plotDn$Index
     ind_DowntrendStop <- which(df$SigDown == "Downtrend Stop")
-    df_plot$SigDownStopDate[-ind_DowntrendStop] <- NA
-    df_plot$Ret_pct[-ind_DowntrendStart] <- NA
-    df_plot$trendDuration[-ind_DowntrendStart] <- NA
-    for(i in 1:length(ind_DowntrendStart)){
-      df_plot$Ret_pct[ind_DowntrendStart[i]:ind_DowntrendStop[i]] <- 
-        df_plot$Ret_pct[ind_DowntrendStart[i]]
-      df_plot$trendDuration[ind_DowntrendStart[i]:ind_DowntrendStop[i]] <- 
-        df_plot$trendDuration[ind_DowntrendStart[i]]
-    }
-    df_plot$`Pct Ret./Time` <- df_plot$Ret_pct / df_plot$trendDuration
+    df_plotDn$SigDownStopDate[-ind_DowntrendStop] <- NA
+    df_plotDn$Ret_pct[-ind_DowntrendStart] <- NA
+    df_plotDn$trendDuration[-ind_DowntrendStart] <- NA
+    df_plotDn$`Pct Change/Time` <- df_plotDn$Ret_pct / df_plotDn$trendDuration
     #--
     #Plot of just the ts with trend start/finish (buy/sell) points overlaid
     gg <- ggplot()
-    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = ts))
-    gg <- gg + geom_point(data = df_plot, aes(x = SigDownStartDate, y = ts), color = "green")
-    gg <- gg + geom_point(data = df_plot, aes(x = SigDownStopDate, y = ts), color = "red")
-    gg <- gg + geom_rect(aes(xmin = df_plot$Index[ind_DowntrendStart], xmax = df_plot$Index[ind_DowntrendStop],
+    gg <- gg + geom_line(data = df_plotDn, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plotDn, aes(x = SigDownStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plotDn, aes(x = SigDownStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plotDn$Index[ind_DowntrendStart], xmax = df_plotDn$Index[ind_DowntrendStop],
                              ymin = -Inf, ymax = Inf, fill = "Downtrends"), alpha = 0.3)
     gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x=element_blank(),
                      axis.ticks.x=element_blank())
     gg <- gg + ylab("Time Series")
-    gg <- gg + scale_fill_manual("",
-                                 values = "green",
-                                 guide = guide_legend(override.aes = list(alpha = 1))) 
-    gg1 <- gg
+    gg <- gg + scale_fill_manual("", values = "green", guide = guide_legend(override.aes = list(alpha = 1)))
+    #gg <- gg + theme_light()
+    gg_Dn1 <- gg
     #--
-    #Accompanying plot of the pct return, shaded to reflect pct ret./time also
-    gg <- ggplot(df_plot, aes(x = Index, y = Ret_pct))
-    gg <- gg + geom_segment(aes(xend = Index, yend = 0, color = `Pct Ret./Time`))
-    gg <- gg + xlab("Date") + ylab("Pct Return")
-    gg2 <- gg
+    #Accompanying plot of the pct change, shaded to reflect pct change/time also
+    df_plotDn_ret <- data.frame(xmin = df_plotDn$SigDownStartDate[ind_DowntrendStart],
+                              xmax = df_plotDn$SigDownStopDate[ind_DowntrendStop],
+                              ymin = 0, ymax = df_plotDn$Ret_pct[ind_DowntrendStart], 
+                              pctch_per_time = df_plotDn$`Pct Change/Time`[ind_DowntrendStart])
+    colnames(df_plotDn_ret)[ncol(df_plotDn_ret)] <- "Pct Change/Time"
+    df_plotDn$zero <- 0
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plotDn, aes(x = Index, y = zero))
+    gg <- gg + geom_rect(data = df_plotDn_ret,
+                         aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
+    gg <- gg + scale_fill_gradient(low = "green", high = "white")
+    gg <- gg + ylab("Pct Change")
+    #gg <- gg + theme_light()
+    gg_Dn2 <- gg
     #--
     #Arrange these plots into one display
-    gg <- ggarrange(gg1, gg2, ncol = 1, nrow = 2, align = "v")
-    print(gg)
-    #-----------------------
+    gg2 <- ggarrange(gg_Dn1, gg_Dn2, ncol = 1, nrow = 2, align = "v")
+    #print(gg2)
+    #===================================================
+    #3
     #Plot roling slope (mean, sd, and cv) with trend start/finish (buy/sell) points overlaid
     #The dydxmu plot includes the mean
     #The ldydxcv plot includes the mean only of buy points > 0
-    df_plot <- df[, c("Index", "BuysigDate", "SelsigDate", "RetLong_pct", 
-                      "RetShrt_pct", "RetLong_mag", "RetShrt_mag", 
-                      "dydxmu", "dydxsd", "ldydxcv")]
-    df_plot <- df_plot %>% gather(ts_type, value, dydxmu:ldydxcv)
-    gg <- ggplot(df_plot, aes(x = Index, y = value)) + geom_line()
-    gg <- gg + geom_point(aes(x = SelsigDate, y = value, size = RetShrt_pct), color = "red")
-    gg <- gg + geom_point(aes(x = BuysigDate, y = value, size = RetLong_pct), color = "green")
-    gg <- gg + facet_wrap(~ts_type, ncol = 1, scales = "free")
-    gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu, ts_type = "dydxmu"), aes(yintercept = yint), linetype = "dotted")
-    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), linetype = "dotted")
-    print(gg)
+    df_plot <- df_plotUp %>% gather(ts_type, Value, dydxmu:ldydxcv)
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = zero), color = "red", linetype = "dotted")
+    gg <- gg + geom_rect(data = df_plotUp_ret,
+                         aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = `Pct Change/Time`), alpha = 0.9)
+    gg <- gg + scale_fill_gradient(low = "white", high = "green")
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = Value))
+    # gg <- gg + theme(#axis.title.x = element_blank(),
+    #                  #axis.text.x = element_blank(),
+    #                  #axis.ticks.x = element_blank(),
+    #                  #axis.title.y = element_blank()
+    #                  )
+    gg <- gg + facet_wrap(~ ts_type, ncol = 1, scales = "free")
+    gg <- gg + xlab("Date") + ylab("Value")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
+    gg3 <- gg
+    #print(gg3)
+    #===================================================
+    #4
+    #Now same for downtrends
+    df_plot <- df_plotDn %>% gather(ts_type, Value, dydxmu:ldydxcv)
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = zero), color = "red", linetype = "dotted")
+    gg <- gg + geom_rect(data = df_plotDn_ret,
+                         aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = `Pct Change/Time`), alpha = 0.9)
+    gg <- gg + scale_fill_gradient(low = "violet", high = "white")
+    gg <- gg + geom_line(data = df_plot, aes(x = Index, y = Value))
+    # gg <- gg + theme(#axis.text.x = element_blank(),
+    #                  #axis.ticks.x = element_blank(),
+    #                  #axis.title.y = element_blank()
+    #                 )
+    gg <- gg + facet_wrap(~ ts_type, ncol = 1, scales = "free")
+    gg <- gg + xlab("Date") + ylab("Value")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_dn, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
+    gg4 <- gg
+    #print(gg4)
+    #---------------------------------------------------
+    gg_final <- ggarrange(gg1, gg2, gg3, gg4, ncol = 2, nrow = 2)
+    print(gg_final)
   }
   #=================================
-  outlist <- list(outVars, df_tsCritPoints, df_ts)
+  outlist <- list(df_ts, df_ts_upEvents, df_ts_dnEvents, outVars)
   return(outlist)
 }
