@@ -17,9 +17,9 @@ library(caret)
 library(scales)
 
 
-fromdate<-"2012-01-01"; todate <- "2018-03-20"
+fromdate<-"2012-01-01"; todate <- "2018-03-26"
 getGlobTrnds(fromdate, todate)
-rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD"))
+rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD", "MIDD"))
 xts_cp <- cpgtetfmat[, -rmcol]
 xts_vol <- volgtetfmat[, -rmcol]
 namevec <- colnames(xts_cp)
@@ -84,9 +84,21 @@ df_groupMU <- df_groupMU[, -rmcols]
 df_group <- cbind(df_groupCV, df_groupMU)
 xts_group <- xts(df_group, as.Date(rownames(df_group)))
 #====================================
+#Experiment
 xts_inMat <- cbind(xts_cpVWMA, xts_group)
-list_df <- list()
-list_df_critpoints <- list()
+this_one <- "MIDD"
+in_ts <- xts_inMat[, this_one]
+print(colnames(in_ts))
+out <- tsTrends(in_ts, quietly = F)
+
+df_plot <- fortify(in_ts)
+df_plot <- join_all(list(df_plot, out[[1]][c("Index", "ts")]), by = "Index")
+colnames(df_plot)[2:3] <- c("in_ts", "out_ts")
+df_plot <- gather(df_plot, "which_ts", "value", in_ts:out_ts)
+ggplot(df_plot, aes(x = Index, y = value, group = which_ts, color = which_ts)) + geom_line()
+#====================================
+#xts_inMat <- cbind(xts_cpVWMA, xts_group)
+xts_inMat <- xts_cpVWMA
 list_df_dydxmu <- list()
 list_df_ldydxcv <- list()
 list_df_sigs <- list()
@@ -95,24 +107,16 @@ for(i in 1:n_ts){
   in_ts <- xts_inMat[, i]
   print(colnames(in_ts))
   out <- tsTrends(in_ts, quietly = T)
-  list_df[[i]] <- out[[1]]
-  list_df_critpoints[[i]] <- out[[2]]
-  list_df_dydxmu[[i]] <- out[[3]]["dydxmu"]
-  list_df_ldydxcv[[i]] <- out[[3]]["ldydxcv"]
-  list_df_sigs[[i]] <- out[[3]]["Sig"]
-  #Sys.sleep(1)
+  list_df_dydxmu[[i]] <- out[[1]][c("Index", "dydxmu")]
+  list_df_ldydxcv[[i]] <- out[[1]][c("Index", "ldydxcv")]
+  list_df_sigs[[i]] <- out[[1]][c("Index", "SigUpWin")]
 }
-df_dydxmu <- do.call(cbind, list_df_dydxmu)
-df_ldydxcv <- do.call(cbind, list_df_ldydxcv)
-df_sigs <- do.call(cbind, list_df_sigs)
-df <- do.call(rbind, list_df)
-colnames(df_dydxmu) <- paste(colnames(xts_inMat), "dydxmu")
-colnames(df_ldydxcv) <- paste(colnames(xts_inMat), "ldydxcv")
-colnames(df_sigs) <- paste(colnames(xts_inMat), "sig")
-df_dydxmu$Index <- index(xts_inMat)
-df_ldydxcv$Index <- index(xts_inMat)
-df_sigs$Index <- index(xts_inMat)
-df$name <- colnames(xts_inMat)
+df_dydxmu <- join_all(list_df_dydxmu, by = "Index")
+df_ldydxcv <- join_all(list_df_ldydxcv, by = "Index")
+df_sigs <- join_all(list_df_sigs, by = "Index")
+colnames(df_dydxmu) <- c("Index", paste(colnames(xts_inMat), "dydxmu"))
+colnames(df_ldydxcv) <- c("Index", paste(colnames(xts_inMat), "ldydxcv"))
+colnames(df_sigs) <- c("Index", paste(colnames(xts_inMat), "sig"))
 #====================================
 #====================================
 #====================================
@@ -127,26 +131,29 @@ name_y <- "SPY"
 df_groupCV$Index <- as.Date(rownames(df_groupCV))
 df_groupMU$Index <- as.Date(rownames(df_groupMU))
 df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU, df_sigs[, -which(colnames(df_sigs) == paste(name_y, "sig"))]), by = "Index")
-rownames(df_feat) <- df_feat$Index
-df_feat$Index <- NULL
-keep_rows <- unique(c(which(is.na(df_feat[, 1]) == F), which(is.nan(df_feat[, 1]) == F)))
-df_feat <- df_feat[keep_rows, ]
-# o <- apply(df_feat, 2, function(x) length(which(is.na(x))))
-# table(o)
-#df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
-df_mod <- df_feat
-
-
 in_ts <- xts_cpEMA[, name_y]
 print(colnames(in_ts))
-out <- tsTrends(in_ts, quietly = F)
-# list_df[[i]] <- out[[1]]
-# list_df_critpoints[[i]] <- out[[2]]
-# list_df_dydxmu[[i]] <- out[[3]]["dydxmu"]
-# list_df_ldydxcv[[i]] <- out[[3]]["ldydxcv"]
-y <- out[[3]][, "Sig"]
-nrow(out[[3]])
-nrow(xts_cpVWMA)
+out_y <- tsTrends(in_ts, quietly = F)
+df_y <- out_y[[1]][, c("Index", "SigUpWin")]
+df_mod <- join_all(list(df_y, df_feat), by = "Index")
+rownames(df_mod) <- df_mod$Index
+df_mod$Index <- NULL
+keep_rows <- unique(c(which(is.na(df_mod[, 1]) == F), which(is.nan(df_mod[, 1]) == F)))
+df_mod <- df_mod[keep_rows, ]
+colnames(df_mod)[1] <- "Sig"
+df_mod$Sig <- as.factor(df_mod$Sig)
+o <- apply(df_mod, 2, function(x) length(which(is.na(x))))
+table(o)
+keep_cols <- which(o <= 14)
+ncol(df_mod)
+df_mod <- df_mod[, keep_cols]
+ncol(df_mod)
+#df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
+
+
+
+
+
 
 df_plot1 <- fortify(in_ts)
 colnames(df_plot1)[2] <- paste(name_y, "ema")
