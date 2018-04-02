@@ -1,4 +1,4 @@
-setwd("D:/OneDrive - CGIAR/Documents")
+#setwd("D:/OneDrive - CGIAR/Documents")
 source('./tsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
@@ -13,9 +13,9 @@ library(randomForest)
 library(corrplot)
 library(quantmod)
 library(lubridate)
+library(xgboost)
 library(caret)
 library(scales)
-
 
 fromdate<-"2012-01-01"; todate <- "2018-03-26"
 getGlobTrnds(fromdate, todate)
@@ -65,6 +65,10 @@ colnames(df_CV) <- as.character(df_vwma$Index)
 df_CV$name <- rownames(df_CV)
 GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
 GroupInfo$X <- NULL
+#Excluding "groups" with 2 or less ts
+rm_these <- names(table(GroupInfo$Sub.type)[which(table(GroupInfo$Sub.type) <= 2)])
+rm_rows <- which(GroupInfo$Sub.type %in% rm_these)
+GroupInfo <- GroupInfo[-rm_rows, ]
 colnames(GroupInfo)[1] <- "name"
 df_CV <- merge(df_CV, GroupInfo[, c("name", "Sub.type")], by = "name")
 df_CV$name <- NULL
@@ -86,16 +90,10 @@ xts_group <- xts(df_group, as.Date(rownames(df_group)))
 #====================================
 #Experiment
 xts_inMat <- cbind(xts_cpVWMA, xts_group)
-this_one <- "MIDD"
+this_one <- "WTI"
 in_ts <- xts_inMat[, this_one]
 print(colnames(in_ts))
 out <- tsTrends(in_ts, quietly = F)
-
-df_plot <- fortify(in_ts)
-df_plot <- join_all(list(df_plot, out[[1]][c("Index", "ts")]), by = "Index")
-colnames(df_plot)[2:3] <- c("in_ts", "out_ts")
-df_plot <- gather(df_plot, "which_ts", "value", in_ts:out_ts)
-ggplot(df_plot, aes(x = Index, y = value, group = which_ts, color = which_ts)) + geom_line()
 #====================================
 #xts_inMat <- cbind(xts_cpVWMA, xts_group)
 xts_inMat <- xts_cpVWMA
@@ -105,18 +103,30 @@ list_df_sigs <- list()
 n_ts <- ncol(xts_inMat)
 for(i in 1:n_ts){
   in_ts <- xts_inMat[, i]
-  print(colnames(in_ts))
-  out <- tsTrends(in_ts, quietly = T)
-  list_df_dydxmu[[i]] <- out[[1]][c("Index", "dydxmu")]
-  list_df_ldydxcv[[i]] <- out[[1]][c("Index", "ldydxcv")]
-  list_df_sigs[[i]] <- out[[1]][c("Index", "SigUpWin")]
+  this_ts <- colnames(in_ts)
+  print(this_ts)
+  out <- tsTrends(in_ts, before_window = 0, aft_window = 0, quietly = T)
+  df_dydxmu_this <- out[[1]][c("Index", "dydxmu")]
+  df_ldydxcv_this <- out[[1]][c("Index", "ldydxcv")]
+  df_sigs_this <- out[[1]][c("Index", "SigUpWin")]
+  df_sigs_this[, 2] <- as.factor(df_sigs_this[, 2])
+  df_sigs_this <- as.data.frame(model.matrix(~.-1, data = df_sigs_this))
+  df_sigs_this$Index <- df_dydxmu_this$Index
+  colnames(df_dydxmu_this)[2] <- paste(this_ts, colnames(df_dydxmu_this)[2])
+  colnames(df_ldydxcv_this)[2] <- paste(this_ts, colnames(df_ldydxcv_this)[2])
+  colnames(df_sigs_this) <-   gsub("SigUpWin", "", colnames(df_sigs_this))
+  n_col_this <- ncol(df_sigs_this)
+  colnames(df_sigs_this)[2:n_col_this] <- paste(this_ts, colnames(df_sigs_this)[2:n_col_this])
+  list_df_dydxmu[[i]] <- df_dydxmu_this
+  list_df_ldydxcv[[i]] <- df_ldydxcv_this
+  list_df_sigs[[i]] <- df_sigs_this
 }
 df_dydxmu <- join_all(list_df_dydxmu, by = "Index")
 df_ldydxcv <- join_all(list_df_ldydxcv, by = "Index")
 df_sigs <- join_all(list_df_sigs, by = "Index")
-colnames(df_dydxmu) <- c("Index", paste(colnames(xts_inMat), "dydxmu"))
-colnames(df_ldydxcv) <- c("Index", paste(colnames(xts_inMat), "ldydxcv"))
-colnames(df_sigs) <- c("Index", paste(colnames(xts_inMat), "sig"))
+# colnames(df_dydxmu) <- c("Index", paste(colnames(xts_inMat), "dydxmu"))
+# colnames(df_ldydxcv) <- c("Index", paste(colnames(xts_inMat), "ldydxcv"))
+# colnames(df_sigs) <- c("Index", paste(colnames(xts_inMat), "sig"))
 #====================================
 #====================================
 #====================================
@@ -124,81 +134,101 @@ colnames(df_sigs) <- c("Index", paste(colnames(xts_inMat), "sig"))
 #Which time series are you trying to model
 name_y <- "SPY"
 #====================================
+#Get features
 # df_feat1 <- df_ldydxcv
 # df_feat2 <- df_dydxmu
 # n <- ncol(df_feat1)
 # colnames(df_feat1)[1:(n - 1)] <- paste(colnames(df_feat1)[1:(n - 1)], "A")
+#First remove signals of predicted var
+rm_cols <- grep(name_y, colnames(df_sigs))
+df_sigs <- df_sigs[, -rm_cols]
+#Now assemble features matrix
 df_groupCV$Index <- as.Date(rownames(df_groupCV))
 df_groupMU$Index <- as.Date(rownames(df_groupMU))
-df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU, df_sigs[, -which(colnames(df_sigs) == paste(name_y, "sig"))]), by = "Index")
+# df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU, df_sigs), by = "Index")
+# df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_groupMU), by = "Index")
+#df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV), by = "Index")
+df_feat <- join_all(list(df_ldydxcv, df_dydxmu, df_groupCV, df_sigs), by = "Index")
+#Get predicted var
 in_ts <- xts_cpEMA[, name_y]
 print(colnames(in_ts))
-out_y <- tsTrends(in_ts, quietly = F)
-df_y <- out_y[[1]][, c("Index", "SigUpWin")]
+before_window <- 5
+aft_window <- 2
+out_y <- tsTrends(in_ts, quietly = F, before_window = before_window, aft_window = aft_window)
+#Trim ts of predicted var to first uptrend start point and last downtrend stop point
+#so that ML training not messed up
+ind_tsStart <- as.numeric(out_y[[4]][1])
+ind_tsFinish <- as.numeric(out_y[[4]][2])
+df_y <- out_y[[1]][ind_tsStart:ind_tsFinish, c("Index", "SigUpWin")]
+colnames(df_y)[2] <- "y"
+n_ts_trimd <- nrow(df_y)
+print(n_ts_trimd)
 df_mod <- join_all(list(df_y, df_feat), by = "Index")
 rownames(df_mod) <- df_mod$Index
 df_mod$Index <- NULL
-keep_rows <- unique(c(which(is.na(df_mod[, 1]) == F), which(is.nan(df_mod[, 1]) == F)))
-df_mod <- df_mod[keep_rows, ]
-colnames(df_mod)[1] <- "Sig"
-df_mod$Sig <- as.factor(df_mod$Sig)
+#df_mod$y <- as.factor(df_mod$y)
+#Check for NAs and NaNs
+length(which(is.na(df_mod$y) == T))
+length(which(is.nan(df_mod$y) == T))
 o <- apply(df_mod, 2, function(x) length(which(is.na(x))))
 table(o)
-keep_cols <- which(o <= 14)
-ncol(df_mod)
-df_mod <- df_mod[, keep_cols]
-ncol(df_mod)
+o <- apply(df_mod, 2, function(x) length(which(is.nan(x))))
+table(o)
 #df_mod <- as.data.frame(PCA(df_feat, ncp = 14)$ind$coord)
 
+predictorsNames <- colnames(df_mod)[2:ncol(df_mod)]
+outcomeName <- colnames(df_mod)[1]
 
 
+#====================================
+# rm_rows <- which(as.character(df_mod$y) == "Hold")
+# df_mod <- df_mod[-rm_rows, ]
+# df_mod$y <- as.factor(as.character(df_mod$y))
+# unique(df_mod$y)
+ind <- which(df_mod$y == "Hold")
+df_mod <- df_mod[-ind, ]
+ind <- which(df_mod$y %in% c("Uptrend False Start", "Uptrend False Stop"))
+df_mod$y[ind] <- "Hold"
+df_mod$y <- as.factor(df_mod$y)
+unique(df_mod$y)
+fitDat_pctot <- .95
+indfit_beg <- 1
+indfit_end <- round(nrow(df_mod) * fitDat_pctot)
+indvalid_beg <- indfit_end + 1
+indvalid_end <- nrow(df_mod)
+fit_rows <- indfit_beg:indfit_end
+valid_rows <- indvalid_beg:indvalid_end
+df_fit <- df_mod[fit_rows, ]
+df_valid <- df_mod[valid_rows, ]
+#====================================
 
 
+# set.seed(1234)
+# splitIndex <- createDataPartition(df_fit[, outcomeName], p = .5, list = FALSE, times = 1)
+# df_train <- df_fit[ splitIndex,]
+# df_test <- df_fit[-splitIndex,]
 
-df_plot1 <- fortify(in_ts)
-colnames(df_plot1)[2] <- paste(name_y, "ema")
-df_plot2 <- fortify(xts_cpVWMA[, name_y])
-colnames(df_plot2)[2] <- paste(name_y, "vwma")
-df_plot <- join_all(list(df_plot1, df_plot2), by = "Index")
-df_plot$buySig <- 0
-df_plot$buySig[which(y == "Buy")] <- 1
-df_plot$sellSig <- 0
-df_plot$sellSig[which(y == "Sell")] <- 1
-df_plot$Index <- as.Date(df_plot$Index)
-gathercols <- colnames(df_plot)[2:3]
-df_plot <- gather_(df_plot, "Ts_type", "Value", gathercols)
-ind_buy <- which(df_plot$buySig == 1)
-ind_sell <- which(df_plot$sellSig == 1)
-gg <- ggplot(df_plot, aes(x = Index, y = Value, group = Ts_type, color = Ts_type))
-gg <- gg + geom_line() + geom_vline(data = data.frame(xint = df_plot$Index[ind_buy], ts_type = "buy"), aes(xintercept = xint), linetype = "dotted", color = "green")
-gg
-#outcomeName_Any <- "anySig"
+trainDat_pctot <- .5
+indtrain_beg <- 1
+indtrain_end <- round(nrow(df_mod) * trainDat_pctot)
+indtest_beg <- indtrain_end + 1
+indtest_end <- nrow(df_mod)
+train_rows <- indtrain_beg:indtrain_end
+test_rows <- indtest_beg:indtest_end
+df_train <- df_mod[train_rows, ]
+df_test <- df_mod[test_rows, ]
 
 
-df_mod$y <- as.factor(y[keep_rows])
-class(df_mod$y)
-predictorsNames <- colnames(df_mod)[1:(ncol(df_mod) - 1)]
-outcomeName <- colnames(df_mod)[ncol(df_mod)]
-# traindat_pctot <- .5
-# indtrain_beg <- 1
-# indtrain_end <- round(length(datevec) * traindat_pctot)
-# indtest_beg <- indtrain_end + 1
-# indtest_end <- nrow(df_mod)
-# df_train <- df_mod[indtrain_beg:indtrain_end, ]
-# df_test <- df_mod[indtest_beg:indtest_end, ]
-
-set.seed(1234)
-splitIndex <- createDataPartition(df_mod[, outcomeName], p = .5, list = FALSE, times = 1)
-#splitIndex <- createTimeSlices(df_mod[, outcomeName], 30)
-df_train <- df_mod[ splitIndex,]
-df_test <- df_mod[-splitIndex,]
-
+nrow(df_mod)
+nrow(df_train)
+nrow(df_test)
+nrow(df_valid)
 #this_method <- "glmnet"
 #this_method <- "glm"
 #this_method <- "nb"
-this_method <- "gbm" #good
-this_method <- "xgbLinear" #better
-#this_method <- "xgbTree"
+#this_method <- "gbm" #good
+#this_method <- "xgbLinear"
+this_method <- "xgbTree" #better
 #this_method <- "naive_bayes"
 #this_method <- "svmRadial"
 #this_method <- "cforest"
@@ -210,12 +240,38 @@ this_method <- "xgbLinear" #better
 # head(trainDF[,predictorsNames])
 # head(trainDF[,outcomeName])
 # head(trainDF)
+# params <- list(booster = "gbtree", objective = "multi:softmax", eta = 0.1,
+#                gamma = 0, max_depth = 25, min_child_weight = 1, subsample = 0.5,
+#                colsample_bytree = 0.5, num_class = 5)
 #=============================
-modelLookup(this_method)
+#modelLookup(this_method)
 #=============================
+#number = 5 is better (and slower)
 objControl <- trainControl(method = 'repeatedcv', number = 3)#, repeats = 3)
+# objControl <- trainControl(
+#   method = "repeatedcv",
+#   number = 5,
+#   repeats = 2,
+#   returnData = FALSE,
+#   classProbs = TRUE,
+#   summaryFunction = multiClassSummary
+# )
+
+# df_train$y <- as.factor(make.names(as.character(df_train$y)))
+# class(df_train$y)
+# df_test$y <- as.factor(make.names(as.character(df_test$y)))
+
+# tune_grid <- expand.grid(nrounds=c(25, 40, 60),
+#                         max_depth = c(25),
+#                         eta = c(0.05, 0.1, 0.3),
+#                         gamma = c(0),
+#                         colsample_bytree = c(0.5, 0.75),
+#                         subsample = c(0.50),
+#                         min_child_weight = c(0))
+
 objModel <- train(df_train[, predictorsNames], df_train[, outcomeName],
-                  method = this_method, trControl = objControl)
+                  method = this_method,
+                  trControl = objControl)
 #-----------------------------
 var_importance <- varImp(objModel, scale = T)
 print(var_importance)
@@ -226,7 +282,7 @@ print(var_importance)
 predictions <- predict(object = objModel, df_test[, predictorsNames], type = 'raw') #type='prob')
 print(postResample(pred = predictions, obs = as.factor(df_test[,outcomeName])))
 #head(predictions)
-df_plot <- rownames(df_test)
+#df_plot <- rownames(df_test)
 #----------------------------
 #Confusion matrix
 x <- confusionMatrix(predictions, df_test[, outcomeName])
@@ -242,6 +298,99 @@ df_plot <- as.data.frame(confmat)
 gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
 gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
 gg
+
+#Again on validate set
+levels(df_test$y)
+predictions <- predict(object = objModel, df_valid[, predictorsNames], type = 'raw') #type='prob')
+print(postResample(pred = predictions, obs = as.factor(df_valid[,outcomeName])))
+x <- confusionMatrix(predictions, df_valid[, outcomeName])
+confmat <- x$table
+confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
+confmat <- as.table(confmat)
+colnames(confmat) <- rownames(confmat)
+names(dimnames(confmat))[2] <- "Reference"
+print(confmat)
+print(x$table)
+class(confmat)
+df_plot <- as.data.frame(confmat)
+gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
+gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
+gg
+#
+
+df_plot <- out_y[[1]][ind_tsStart:ind_tsFinish, c("Index", "ts", "SigUpWin")]
+ind_up <- which(df_plot$SigUpWin == "Uptrend Start")
+ind_dn <- which(df_plot$SigUpWin == "Uptrend Stop")
+df_plot <- df_plot[valid_rows, ]
+ind <- which(df_plot$SigUpWin %in% c(""))
+df_plot$SigUpWin
+gg <- ggplot(df_plot, aes(x = Index, y = ts)) + geom_line()
+gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Act")], color = "blue", alpha = 0.3)
+gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Uptrend Stop")], color = "red", alpha = 0.3)
+
+# gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Uptrend Start")], color = "green", alpha = 0.3)
+# gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Uptrend Stop")], color = "red", alpha = 0.3)
+# gg <- gg + geom_vline(xintercept = df_plot$Index[which(df_plot$SigUpWin == "Uptrend Start")], color = "blue", linetype = "dotted")
+# gg <- gg + geom_vline(xintercept = df_plot$Index[which(df_plot$SigUpWin == "Uptrend Stop")], color = "violet", linetype = "dotted")
+gg
+
+#
+predictions <- predict(object = objModel, df_testRecent[, predictorsNames], type = 'prob') #type='prob')
+df_plot$pred <- predictions$Act
+mark <- which(predictions$Act > 0.75)
+df_plot <- df_plot %>% gather(Type, Value, ts:pred)
+gg <- ggplot(df_plot, aes(x = Index, y = Value)) + geom_line()
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free")
+gg <- gg + geom_vline(xintercept = df_plot$Index[mark])
+gg <- gg + geom_vline(xintercept = df_plot$Index[mark])
+gg
+
+
+
+
+
+
+
+
+
+predictions <- predict(object = objModel, df_valid[, predictorsNames], type = 'raw') #type='prob')
+print(postResample(pred = predictions, obs = as.factor(df_valid[,outcomeName])))
+
+df_plot <- out_y[[1]][ind_tsStart:ind_tsFinish, c("Index", "ts")]
+df_plot <- df_plot[valid_rows,]
+gg <- ggplot(df_plot, aes(x = Index, y = ts)) + geom_line()
+gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Act")])
+gg
+
+
+
+predictions <- predict(object = objModel, df_testRecent[, predictorsNames], type = 'prob') #type='prob')
+
+df_plot <- out_y[[1]][ind_tsStart:ind_tsFinish, c("Index", "ts")]
+df_plot <- df_plot[valid_rows,]
+df_plot$pred <- predictions$Act
+df_plot <- df_plot %>% gather(Type, Value, ts:pred)
+gg <- ggplot(df_plot, aes(x = Index, y = Value)) + geom_line()
+#gg <- gg + geom_vline(xintercept = df_plot$Index[which(predictions == "Act")])
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free")
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #----------------------------
 #redux with only important variables
 q <- as.numeric(quantile(var_importance$importance[, 1], probs = 0.85))
@@ -373,6 +522,129 @@ fviz_pca_biplot(res, habillage = df_pca$General.Type)
 
 
 
+
+
+
+y_train <- recode(df_train$y, Hold = "0", `Uptrend Start` = "1",
+                  `Uptrend Stop` = "2", `Uptrend False Start` = "3",
+                  `Uptrend False Stop` = "4")
+y_test <- recode(df_test$y, Hold = "0", `Uptrend Start` = "1",
+                 `Uptrend Stop` = "2", `Uptrend False Start` = "3",
+                 `Uptrend False Stop` = "4")
+y_train <- as.numeric(as.character(y_train))
+y_test <- as.numeric(as.character(y_test))
+
+mat_train <- as.matrix(df_train[, -1])
+mat_test <- as.matrix(df_test[, -1])
+l_train <- list(feats = mat_train, y = y_train)
+l_test <- list(feats = mat_test, y = y_test)
+
+dtrain <- xgb.DMatrix(data = l_train$feats, label = l_train$y)
+dtest <- xgb.DMatrix(data = l_test$feats, label = l_test$y)
+
+# xgbcv <- xgb.cv(params = params, data = dtrain, nrounds = 100, 
+#                 nfold = 5, showsd = T, stratified = T, 
+#                 print_every_n = 10, early_stop_round = 20,
+#                 num_class = 12,
+#                 maximize = F)
+# 
+# min(xgbcv$test.error.mean)
+
+# k-fold cross validation, with timing
+params <- list(booster = "gbtree", objective = "multi:softmax", eta = 0.1,
+               gamma = 0, max_depth = 25, min_child_weight = 1, subsample = 0.5,
+               colsample_bytree = 0.5, num_class = 5)
+nround.cv = 500
+xgboost.cv <- xgb.cv(params = params,
+                     data = dtrain,
+                     nfold = 10,
+                     nrounds = nround.cv,
+                     prediction = TRUE,
+                     verbose=1)
+
+# index of maximum auc:
+max.auc.idx = which.max(xgboost.cv$dt[, test.auc.mean]) 
+max.auc.idx 
+## [1] 493
+# minimum merror
+xgboost.cv$dt[max.auc.idx,]
+
+# real model fit training, with full data
+xgb.bst <- xgboost(param=param, data=train.matrix, label=train$Survived, 
+                   nrounds=max.auc.idx, verbose=1)
+pred <- predict(xgb.bst,test.matrix)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+params <- list(booster = "gbtree", objective = "multi:softmax", eta = 0.1,
+               gamma = 0, max_depth = 25, min_child_weight = 1, subsample = 0.5,
+               colsample_bytree = 0.5)
+
+
+watchlist <- list(train = dtrain, test = dtest)
+
+#xgb <- xgboost(
+xgb <- xgb.train(params = params,
+                 data = dtrain,
+                 nround = 35,
+                 watchlist = watchlist,
+                 seed = 1,
+                 eval_metric = "merror",
+                 num_class = 5,
+                 verbose = 1
+)
+
+#xgb1 <- xgb.train (params = params, data = dtrain, nrounds = 79, watchlist = list(val=dtest,train=dtrain), print.every.n = 10, early.stop.round = 10, maximize = F , eval_metric = "error")
+#model prediction
+xgbpred <- predict(xgb, dtest)
+str(xgbpred)
+
+x <- confusionMatrix (xgbpred, y_test)
+print(x)
+confmat <- x$table
+confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
+confmat <- as.table(confmat)
+colnames(confmat) <- rownames(confmat)
+names(dimnames(confmat))[2] <- "Reference"
+print(confmat)
+print(x$table)
+class(confmat)
+df_plot <- as.data.frame(confmat)
+gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
+gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
+gg
+
+
+
+
+mat <- xgb.importance (feature_names = colnames(mat_train), model = xgb)
+xgb.plot.importance (importance_matrix = mat[1:20]) 
+
+
+# predict values in test set
+y_pred <- predict(xgb, data.matrix(df_test[,-1]))
+head(y_pred)
+# Get the feature real names
+names <- dimnames(data.matrix(df_train[, -1]))[[2]]
+
+# Compute feature importance matrix
+importance_matrix <- xgb.importance(names, model = xgb)
+# Nice graph
+xgb.plot.importance(importance_matrix[1:10,])
 
 
 
