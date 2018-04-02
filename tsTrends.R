@@ -217,14 +217,17 @@ tsTrends <- function(in_ts, slope_window = 13,
   sd_dydx_mu_dn <- sd(df$dydxmu[ind_dnBeg_keep])
   cv_dydx_mu_dn <- sd_dydx_mu_dn / mu_dydx_mu_dn
   #---------------------------------
-  #Trim ts to first uptrend start point and last downtrend stop point
+  #Get trimmed ts index to first uptrend start point and last downtrend stop point
   #so that ML training not messed up
   ind_tsStart <- min(ind_upBeg[1], ind_dnBeg[1]) - before_window
   ind_tsFinish <- max(ind_upFin[n_upFin], ind_dnFin[n_dnFin]) + aft_window
-  df <- df[ind_tsStart:ind_tsFinish, ]
+  # df <- df[ind_tsStart:ind_tsFinish, ]
   n_ts_trimd <- nrow(df)
   #---------------------------------
   outVars <- data.frame(
+    ind_tsStart = ind_tsStart,
+    ind_tsFinish = ind_tsFinish,
+    
     n_uptrends_kept = n_upBeg_keep,
     n_downtrends_kept = n_dnBeg_keep,
     n_uptrends_false = n_upBeg_false,
@@ -264,38 +267,38 @@ tsTrends <- function(in_ts, slope_window = 13,
   df_ts_dnEvents <- df_ts_dnEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDown")]
   #===================================================
   if(quietly == F){
-  cat("Raw length of time series: ", n_ts, "\n",
-      "Trimmed length of time series: ", n_ts_trimd, "\n",
-      "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
-      "Num. raw downtrend signals: ", n_upFin_raw, "\n",
-      "Num. raw uptrend signals after bookend adjust: ", n_upBeg, "\n",
-      "Num. raw downtrend signals after bookend adjust: ", n_dnBeg, "\n",
-      "Num. false uptrend signals: ", n_upBeg_false, "\n",
-      "Num. false downtrend signals: ", n_dnBeg_false, "\n",
-      "Num. uptrend signals within pct change thresholds (kept): ", n_upBeg_keep, "\n",
-      "Num. downtrend signals within pct change thresholds (kept): ", n_dnBeg_keep, "\n",
-      "Sum of all kept uptrends: ", sum_RetLong_mag_keep, "\n",
-      "Sum of all kept downtrends: ", sum_RetShrt_mag_keep, "\n",
-      "Mean change kept uptrends: ", mu_RetLong_mag_keep, "\n",
-      "Mean change kept downtrends: ", mu_RetShrt_mag_keep, "\n",
-      "Mean pct. change kept uptrends: ", mu_RetLong_pct_keep, "\n",
-      "Mean pct. change kept downtrends: ", mu_RetShrt_pct_keep, "\n",
-      "CV change kept uptrends: ", cv_RetLong_mag_keep, "\n",
-      "CV change kept downtrends: ", cv_RetShrt_mag_keep, "\n",
-      "Mean rolling mean slope: ", mu_dydx_mu, "\n",
-      "CV roling mean slope: ", cv_dydx_mu, "\n",
-      "Mean rolling mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
-      "CV rolling mean slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
-      "Mean rolling mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
-      "CV rolling mean slope at kept downtrend starts: ", cv_dydx_mu_dn, "\n",
-      "Mean logged rolling cv of (abs val of) slope at kept uptrend starts: ", mu_ldydx_cv_up, "\n",
-      "CV logged rolling cv of (abs val of) slope at kept uptrend starts: ", cv_ldydx_cv_up
-  )
-  #===================================================
-  #4 Graphs
-  #===================================================
-  #===================================================
-  #1
+    cat("Raw length of time series: ", n_ts, "\n",
+        "Trimmed length of time series: ", n_ts_trimd, "\n",
+        "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
+        "Num. raw downtrend signals: ", n_upFin_raw, "\n",
+        "Num. raw uptrend signals after bookend adjust: ", n_upBeg, "\n",
+        "Num. raw downtrend signals after bookend adjust: ", n_dnBeg, "\n",
+        "Num. false uptrend signals: ", n_upBeg_false, "\n",
+        "Num. false downtrend signals: ", n_dnBeg_false, "\n",
+        "Num. uptrend signals within pct change thresholds (kept): ", n_upBeg_keep, "\n",
+        "Num. downtrend signals within pct change thresholds (kept): ", n_dnBeg_keep, "\n",
+        "Sum of all kept uptrends: ", sum_RetLong_mag_keep, "\n",
+        "Sum of all kept downtrends: ", sum_RetShrt_mag_keep, "\n",
+        "Mean change kept uptrends: ", mu_RetLong_mag_keep, "\n",
+        "Mean change kept downtrends: ", mu_RetShrt_mag_keep, "\n",
+        "Mean pct. change kept uptrends: ", mu_RetLong_pct_keep, "\n",
+        "Mean pct. change kept downtrends: ", mu_RetShrt_pct_keep, "\n",
+        "CV change kept uptrends: ", cv_RetLong_mag_keep, "\n",
+        "CV change kept downtrends: ", cv_RetShrt_mag_keep, "\n",
+        "Mean rolling mean slope: ", mu_dydx_mu, "\n",
+        "CV roling mean slope: ", cv_dydx_mu, "\n",
+        "Mean rolling mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
+        "CV rolling mean slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
+        "Mean rolling mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
+        "CV rolling mean slope at kept downtrend starts: ", cv_dydx_mu_dn, "\n",
+        "Mean logged rolling cv of (abs val of) slope at kept uptrend starts: ", mu_ldydx_cv_up, "\n",
+        "CV logged rolling cv of (abs val of) slope at kept uptrend starts: ", cv_ldydx_cv_up
+    )
+    #===================================================
+    #4 Graphs
+    #===================================================
+    #===================================================
+    #1
     df_plotUp <- df[, c("Index", "SigUp", "SigDown", "ts", "Ret_pct", "trendDuration", "dydxmu", "dydxsd", "ldydxcv")]
     df_plotUp$Ret_pct <- df_plotUp$Ret_pct * 100
     df_plotUp$SigUpStartDate <- df_plotUp$Index
@@ -320,28 +323,28 @@ tsTrends <- function(in_ts, slope_window = 13,
                      axis.ticks.x=element_blank())
     gg <- gg + ylab("Time Series")
     gg <- gg + scale_fill_manual("", values = "green", guide = guide_legend(override.aes = list(alpha = 1))) 
-#    gg <- gg + theme_light()
+    #    gg <- gg + theme_light()
     gg_Up1 <- gg
     #--
     #Accompanying plot of the pct change, shaded to reflect pct change/time also
     df_plotUp_ret <- data.frame(xmin = df_plotUp$SigUpStartDate[ind_UptrendStart],
-                              xmax = df_plotUp$SigUpStopDate[ind_UptrendStop],
-                              ymin = 0, ymax = df_plotUp$Ret_pct[ind_UptrendStart], 
-                              pctch_per_time = df_plotUp$`Pct Change/Time`[ind_UptrendStart])
+                                xmax = df_plotUp$SigUpStopDate[ind_UptrendStop],
+                                ymin = 0, ymax = df_plotUp$Ret_pct[ind_UptrendStart], 
+                                pctch_per_time = df_plotUp$`Pct Change/Time`[ind_UptrendStart])
     colnames(df_plotUp_ret)[ncol(df_plotUp_ret)] <- "Pct Change/Time"
     df_plotUp$zero <- 0
     gg <- ggplot()
     gg <- gg + geom_line(data = df_plotUp, aes(x = Index, y = zero))
     gg <- gg + geom_rect(data = df_plotUp_ret,
-              aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
+                         aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
     gg <- gg + scale_fill_gradient(low = "white", high = "green")
     gg <- gg + ylab("Pct Change")
-#    gg <- gg + theme_light()
+    #    gg <- gg + theme_light()
     gg_Up2 <- gg
     #--
     #Arrange these plots into one display
     gg1 <- ggarrange(gg_Up1, gg_Up2, ncol = 1, nrow = 2, align = "v")
-    #print(gg1)
+    print(gg1)
     #===================================================
     #2
     #Do same for down trends
@@ -374,9 +377,9 @@ tsTrends <- function(in_ts, slope_window = 13,
     #--
     #Accompanying plot of the pct change, shaded to reflect pct change/time also
     df_plotDn_ret <- data.frame(xmin = df_plotDn$SigDownStartDate[ind_DowntrendStart],
-                              xmax = df_plotDn$SigDownStopDate[ind_DowntrendStop],
-                              ymin = 0, ymax = df_plotDn$Ret_pct[ind_DowntrendStart], 
-                              pctch_per_time = df_plotDn$`Pct Change/Time`[ind_DowntrendStart])
+                                xmax = df_plotDn$SigDownStopDate[ind_DowntrendStop],
+                                ymin = 0, ymax = df_plotDn$Ret_pct[ind_DowntrendStart], 
+                                pctch_per_time = df_plotDn$`Pct Change/Time`[ind_DowntrendStart])
     colnames(df_plotDn_ret)[ncol(df_plotDn_ret)] <- "Pct Change/Time"
     df_plotDn$zero <- 0
     gg <- ggplot()
@@ -390,7 +393,7 @@ tsTrends <- function(in_ts, slope_window = 13,
     #--
     #Arrange these plots into one display
     gg2 <- ggarrange(gg_Dn1, gg_Dn2, ncol = 1, nrow = 2, align = "v")
-    #print(gg2)
+    print(gg2)
     #===================================================
     #3
     #Plot roling slope (mean, sd, and cv) with trend start/finish (buy/sell) points overlaid
@@ -413,7 +416,7 @@ tsTrends <- function(in_ts, slope_window = 13,
     gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
     gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
     gg3 <- gg
-    #print(gg3)
+    print(gg3)
     #===================================================
     #4
     #Now same for downtrends
@@ -431,9 +434,9 @@ tsTrends <- function(in_ts, slope_window = 13,
     gg <- gg + facet_wrap(~ ts_type, ncol = 1, scales = "free")
     gg <- gg + xlab("Date") + ylab("Value")
     gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
-    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_dn, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
+    gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
     gg4 <- gg
-    #print(gg4)
+    print(gg4)
     #---------------------------------------------------
     gg_final <- ggarrange(gg1, gg2, gg3, gg4, ncol = 2, nrow = 2)
     print(gg_final)
