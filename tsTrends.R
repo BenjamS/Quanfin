@@ -425,7 +425,7 @@ tsTrends <- function(in_ts, slope_window = 13,
     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = zero), color = "red", linetype = "dotted")
     gg <- gg + geom_rect(data = df_plotDn_ret,
                          aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = `Pct Change/Time`), alpha = 0.9)
-    gg <- gg + scale_fill_gradient(low = "violet", high = "white")
+    gg <- gg + scale_fill_gradient(low = "green", high = "white")
     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = Value))
     # gg <- gg + theme(#axis.text.x = element_blank(),
     #                  #axis.ticks.x = element_blank(),
