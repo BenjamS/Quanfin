@@ -1,5 +1,5 @@
-tsTrends <- function(in_ts, slope_window = 13,
-                     before_window = 5, aft_window = 2,
+tsTrends <- function(in_ts, slope_window = 5,
+                     before_window = 8, aft_window = 2,
                      thresh_RetLong_pct = 0.01,
                      thresh_RetShrt_pct = -0.01, quietly = T)
 {
@@ -318,13 +318,30 @@ tsTrends <- function(in_ts, slope_window = 13,
     gg <- gg + geom_point(data = df_plotUp, aes(x = SigUpStopDate, y = ts), color = "red")
     gg <- gg + geom_rect(aes(xmin = df_plotUp$Index[ind_UptrendStart], xmax = df_plotUp$Index[ind_UptrendStop],
                              ymin = -Inf, ymax = Inf, fill = "Uptrends"), alpha = 0.3)
+    gg <- gg + scale_fill_manual("", values = "green", guide = guide_legend(override.aes = list(alpha = 1)))
     gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x=element_blank(),
                      axis.ticks.x=element_blank())
     gg <- gg + ylab("Time Series")
-    gg <- gg + scale_fill_manual("", values = "green", guide = guide_legend(override.aes = list(alpha = 1))) 
     #    gg <- gg + theme_light()
     gg_Up1 <- gg
+    #--
+    #Accompanying plot of false uptrends
+    ind_UptrendStart_false <- which(df$SigUp == "Uptrend False Start")
+    ind_UptrendStop_false <- which(df$SigUp == "Uptrend False Stop")
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plotUp, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plotUp, aes(x = SigUpStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plotUp, aes(x = SigUpStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plotUp$Index[ind_UptrendStart_false], xmax = df_plotUp$Index[ind_UptrendStop_false],
+                             ymin = -Inf, ymax = Inf, fill = "False Uptrends"), alpha = 0.3)
+    gg <- gg + scale_fill_manual("", values = "violet", guide = guide_legend(override.aes = list(alpha = 1)))
+    gg <- gg + ylab("Time Series")
+    gg <- gg + theme(axis.title.x = element_blank())#,
+                     # axis.text.x=element_blank(),
+                     # axis.ticks.x=element_blank())
+    #    gg <- gg + theme_light()
+    gg_UpFalse1 <- gg
     #--
     #Accompanying plot of the pct change, shaded to reflect pct change/time also
     df_plotUp_ret <- data.frame(xmin = df_plotUp$SigUpStartDate[ind_UptrendStart],
@@ -339,11 +356,14 @@ tsTrends <- function(in_ts, slope_window = 13,
                          aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
     gg <- gg + scale_fill_gradient(low = "white", high = "green")
     gg <- gg + ylab("Pct Change")
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank())
     #    gg <- gg + theme_light()
     gg_Up2 <- gg
     #--
     #Arrange these plots into one display
-    gg1 <- ggarrange(gg_Up1, gg_Up2, ncol = 1, nrow = 2, align = "v")
+    gg1 <- ggarrange(gg_Up1, gg_Up2, gg_UpFalse1, ncol = 1, nrow = 3, align = "v")
     print(gg1)
     #===================================================
     #2
@@ -375,6 +395,21 @@ tsTrends <- function(in_ts, slope_window = 13,
     #gg <- gg + theme_light()
     gg_Dn1 <- gg
     #--
+    #Accompanying plot of false downtrends
+    ind_DowntrendStart_false <- which(df$SigDown == "Downtrend False Start")
+    ind_DowntrendStop_false <- which(df$SigDown == "Downtrend False Stop")
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plotDn, aes(x = Index, y = ts))
+    gg <- gg + geom_point(data = df_plotDn, aes(x = SigDownStartDate, y = ts), color = "green")
+    gg <- gg + geom_point(data = df_plotDn, aes(x = SigDownStopDate, y = ts), color = "red")
+    gg <- gg + geom_rect(aes(xmin = df_plotDn$Index[ind_DowntrendStart_false], xmax = df_plotDn$Index[ind_DowntrendStop_false],
+                             ymin = -Inf, ymax = Inf, fill = "False Downtrends"), alpha = 0.3)
+    gg <- gg + ylab("Time Series")
+    gg <- gg + scale_fill_manual("", values = "violet", guide = guide_legend(override.aes = list(alpha = 1)))
+    gg <- gg + theme(axis.title.x = element_blank())
+    #gg <- gg + theme_light()
+    gg_DnFalse1 <- gg
+    #--
     #Accompanying plot of the pct change, shaded to reflect pct change/time also
     df_plotDn_ret <- data.frame(xmin = df_plotDn$SigDownStartDate[ind_DowntrendStart],
                                 xmax = df_plotDn$SigDownStopDate[ind_DowntrendStop],
@@ -388,11 +423,14 @@ tsTrends <- function(in_ts, slope_window = 13,
                          aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = `Pct Change/Time`), alpha = 0.9)
     gg <- gg + scale_fill_gradient(low = "green", high = "white")
     gg <- gg + ylab("Pct Change")
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank())
     #gg <- gg + theme_light()
     gg_Dn2 <- gg
     #--
     #Arrange these plots into one display
-    gg2 <- ggarrange(gg_Dn1, gg_Dn2, ncol = 1, nrow = 2, align = "v")
+    gg2 <- ggarrange(gg_Dn1, gg_Dn2, gg_DnFalse1, ncol = 1, nrow = 3, align = "v")
     print(gg2)
     #===================================================
     #3
@@ -438,8 +476,10 @@ tsTrends <- function(in_ts, slope_window = 13,
     gg4 <- gg
     print(gg4)
     #---------------------------------------------------
-    gg_final <- ggarrange(gg1, gg2, gg3, gg4, ncol = 2, nrow = 2)
-    print(gg_final)
+    gg_finalUp <- ggarrange(gg1, gg3, ncol = 1, nrow = 2)
+    gg_finalDn <- ggarrange(gg2, gg4, ncol = 1, nrow = 2)
+    print(gg_finalUp)
+    print(gg_finalDn)
   }
   #=================================
   outlist <- list(df_ts, df_ts_upEvents, df_ts_dnEvents, outVars)
