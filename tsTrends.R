@@ -1,5 +1,5 @@
 tsTrends <- function(in_ts, slope_window = 5,
-                     before_window = 8, aft_window = 2,
+                     before_window = 5, aft_window = 2,
                      thresh_RetLong_pct = 0.01,
                      thresh_RetShrt_pct = -0.01, quietly = T)
 {
@@ -74,6 +74,8 @@ tsTrends <- function(in_ts, slope_window = 5,
   #Get trend start/finish points by taking differences
   ind_upFin <- ind_uptrnd[which(diff(ind_uptrnd) != 1)]
   ind_upBeg <- ind_dntrnd[which(diff(ind_dntrnd) != 1)]
+  ind_dnFin <- ind_upBeg
+  ind_dnBeg <- ind_upFin
   #If necessary, remove start/finish points so that first point is a start
   #and last point is a finish, so that you have a set of complete up/down trends
   #Let's adopt convention that we always start with a buy and end with a sell
@@ -81,15 +83,15 @@ tsTrends <- function(in_ts, slope_window = 5,
   n_upFin <- length(ind_upFin)
   n_upBeg_raw <- n_upBeg
   n_upFin_raw <- n_upFin
-  if(ind_upBeg[1] > ind_upFin[1]){ind_upFin <- ind_upFin[-1]; n_upFin <- length(ind_upFin)}
-  if(ind_upBeg[n_upBeg] > ind_upFin[n_upFin]){ind_upBeg <- ind_upBeg[-n_upBeg]; n_upBeg <- length(ind_upBeg)}
-  if(sum(ind_upFin - ind_upBeg < 0) > 0){print("Problem with uptrends")}
-  ind_dnBeg <- ind_upFin[-n_upFin]
-  ind_dnFin <- ind_upBeg[-1]
   n_dnBeg <- length(ind_dnBeg)
   n_dnFin <- length(ind_dnFin)
   n_dnBeg_raw <- n_dnBeg
   n_dnFin_raw <- n_dnFin
+  if(ind_upBeg[1] > ind_upFin[1]){ind_upFin <- ind_upFin[-1]; n_upFin <- length(ind_upFin)}
+  if(ind_upBeg[n_upBeg] > ind_upFin[n_upFin]){ind_upBeg <- ind_upBeg[-n_upBeg]; n_upBeg <- length(ind_upBeg)}
+  if(sum(ind_upFin - ind_upBeg < 0) > 0){print("Problem with uptrends")}
+  if(ind_dnBeg[1] > ind_dnFin[1]){ind_dnFin <- ind_dnFin[-1]; n_dnFin <- length(ind_dnFin)}
+  if(ind_dnBeg[n_dnBeg] > ind_dnFin[n_dnFin]){ind_dnBeg <- ind_dnBeg[-n_dnBeg]; n_dnBeg <- length(ind_dnBeg)}
   if(sum(ind_dnFin - ind_dnBeg < 0) > 0){print("Problem with downtrends")}
   #Get value of trend increase/decrease (as magnitude and percentage)
   #and trend durations
@@ -155,6 +157,46 @@ tsTrends <- function(in_ts, slope_window = 5,
   mu_RetShrt_pct_keep <- mean(RetShrt_pct_keep)
   sd_RetShrt_pct_keep <- sd(RetShrt_pct_keep)
   cv_RetShrt_pct_keep <- sd_RetShrt_pct_keep / mu_RetShrt_pct_keep
+  #-----------------------
+  #Trading simulator
+  Comission <- 7
+  seeds <- seq(100, 1000, 25)
+  gains_tot_exclud_falseStarts <- c()
+  gains_tot_all_slope_crossings <- c()
+  gains_short_all <- c()
+  gains_short_exclFalse <- c()
+  gains_long_all <- c()
+  gains_long_exclFalse <- c()
+  for(j in 1:length(seeds)){
+  seed <- seeds[j]
+  gains <- seed
+  for(i in 1:length(RetLong_pct_keep)){gains <- gains + gains * RetLong_pct_keep[i] - 2 * Comission}
+  gains_long_exclud_falseStarts <- gains
+  gains <- seed
+  for(i in 1:length(RetLong_pct)){gains <- gains + gains * RetLong_pct[i] - 2 * Comission}
+  gains_long_all_slope_crossings <- gains
+  #--
+  gains <- seed
+  for(i in 1:length(RetShrt_pct_keep)){gains <- gains - gains * RetShrt_pct_keep[i] - 2 * Comission}
+  gains_short_exclud_falseStarts <- gains
+  gains <- seed
+  for(i in 1:length(RetShrt_pct)){gains <- gains - gains * RetShrt_pct[i] - 2 * Comission}
+  gains_short_all_slope_crossings <- gains
+  #--
+  gains_tot_exclud_falseStarts[j] <- gains_short_exclud_falseStarts + gains_long_exclud_falseStarts
+  gains_tot_all_slope_crossings[j] <- gains_short_all_slope_crossings + gains_long_all_slope_crossings
+  gains_short_all[j] <- gains_short_all_slope_crossings
+  gains_short_exclFalse[j] <- gains_short_exclud_falseStarts
+  gains_long_all[j] <- gains_long_all_slope_crossings
+  gains_long_exclFalse[j] <- gains_long_exclud_falseStarts
+  }
+  df <- data.frame(seed = seeds, gains_tot_exclud_falseStarts, gains_tot_all_slope_crossings,
+                   gains_short_all, gains_short_exclFalse,
+                   gains_long_all, gains_long_exclFalse)
+  gathercols <- colnames(df)[2:ncol(df)]
+  df <- gather_(df, "Type", "Value", gathercols)
+  ggplot(df, aes(x = seed, y = Value)) + geom_line() + facet_wrap(~ Type, ncol = 3)
+  #-----------------------
   #--
   # df$Ret_pct[ind_dnBeg_keep]
   # gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
