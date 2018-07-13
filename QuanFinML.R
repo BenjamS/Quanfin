@@ -1,4 +1,4 @@
-#setwd("D:/OneDrive - CGIAR/Documents")
+setwd("D:/OneDrive - CGIAR/Documents")
 source('./tsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
@@ -17,7 +17,7 @@ library(xgboost)
 library(caret)
 library(scales)
 
-fromdate<-"2012-01-01"; todate <- "2018-03-26"
+fromdate<-"2012-01-01"; todate <- "2018-07-10"
 getGlobTrnds(fromdate, todate)
 rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD", "MIDD"))
 xts_cp <- cpgtetfmat[, -rmcol]
@@ -27,7 +27,7 @@ n_names <- length(namevec)
 
 o <- apply(xts_cp, 2, function(x) length(which(is.na(x))))
 table(o)
-rmcols <- which(o > 57)
+rmcols <- which(o > 60)
 colnames(xts_cp)[rmcols]
 xts_cp <- xts_cp[, -rmcols]
 xts_vol <- xts_vol[, -rmcols]
@@ -63,14 +63,15 @@ xts_cpVWMA <- xts(df_vwma[, -1], datevec)
 df_CV <- as.data.frame(t(df_vwma[, 2:ncol(df_vwma)]))
 colnames(df_CV) <- as.character(df_vwma$Index)
 df_CV$name <- rownames(df_CV)
-GroupInfo <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
-GroupInfo$X <- NULL
+GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo_raw$X <- NULL
+colnames(GroupInfo_raw)[1] <- "name"
 #Excluding "groups" with 2 or less ts
-rm_these <- names(table(GroupInfo$Sub.type)[which(table(GroupInfo$Sub.type) <= 2)])
-rm_rows <- which(GroupInfo$Sub.type %in% rm_these)
-GroupInfo <- GroupInfo[-rm_rows, ]
-colnames(GroupInfo)[1] <- "name"
-df_CV <- merge(df_CV, GroupInfo[, c("name", "Sub.type")], by = "name")
+GroupInfo_this <- GroupInfo_raw
+rm_these <- names(table(GroupInfo_this$Sub.type)[which(table(GroupInfo_this$Sub.type) <= 2)])
+rm_rows <- which(GroupInfo_this$Sub.type %in% rm_these)
+GroupInfo_this <- GroupInfo_this[-rm_rows, ]
+df_CV <- merge(df_CV, GroupInfo_this[, c("name", "Sub.type")], by = "name")
 df_CV$name <- NULL
 gathercols <- colnames(df_CV)
 df_CVmu <- df_CV %>% group_by(Sub.type) %>% summarise_all(mean)
@@ -88,9 +89,85 @@ df_groupMU <- df_groupMU[, -rmcols]
 df_group <- cbind(df_groupCV, df_groupMU)
 xts_group <- xts(df_group, as.Date(rownames(df_group)))
 #====================================
-#Experiment
+#Covariance matrix, collective modes
+xts_collectiveModes <- xts_cpVWMA
+o <- apply(xts_collectiveModes, 1, function(x) length(which(is.na(x))))
+table(o)
+rmrows <- as.integer(which(o > 0))
+xts_collectiveModes_diff <- diff(log(xts_collectiveModes[-rmrows, ]))
+xts_collectiveModes_diff <- xts_collectiveModes_diff[-1, ]
+o <- apply(xts_collectiveModes_diff, 2, function(x) length(which(is.nan(x))))
+table(o)
+rmcols <- as.integer(which(o > 0))
+xts_collectiveModes_diff <- xts_collectiveModes_diff[, -rmcols]
+# which(is.nan(xts_collectiveModes_diff[, "INR"]))
+# which(is.nan(xts_collectiveModes_diff[, "BAL"]))
+#nrow(xts_collectiveModes)
+cormat <- cor(xts_collectiveModes_diff[-1, ])
+image(cormat)
+e <- eigen(cormat)
+#class(e$values)
+df_e <- data.frame(values = e$values)
+N_t <- nrow(xts_collectiveModes_diff)
+N_c <- ncol(xts_collectiveModes_diff)
+Q <- N_t / N_c
+#s_sq <- 1 - max(df_e$values) / N_c
+s_sq <- 1
+lam_rand_max <- s_sq * (1 + 1 / Q + 2 / sqrt(Q))
+lam_rand_min <- s_sq * (1 + 1 / Q - 2 / sqrt(Q))
+lam <- seq(0, lam_rand_max * 1.1, 0.01)
+dens_rand <- Q / (2 * pi * s_sq) * sqrt((lam_rand_max - lam) * (lam - lam_rand_min)) / lam
+gg <- ggplot() + geom_density(data = df_e, aes(x = values)) + coord_cartesian(xlim = c(0, 4))
+gg <- gg + geom_line(data = data.frame(x = lam, y = dens_rand), aes(x = x, y = y))
+gg
+ind_deviating_from_noise <- which(df_e$values > lam_rand_max)
+CollectiveModes <- as.matrix(e$vectors[, ind_deviating_from_noise])
+df_collectiveModes <- as.data.frame(CollectiveModes)
+n_collectiveModes <- ncol(CollectiveModes)
+#colnames(xts_collectiveModes)
+names_all_ts <- colnames(xts_collectiveModes_diff)
+n_all_ts <- length(names_all_ts)
+GroupInfo_clean <- subset(GroupInfo_raw, name %in% names_all_ts)
+nameSubtypes <- GroupInfo_clean$Sub.type
+ArbGroupTypes <- unique(nameSubtypes)
+n_groups <- length(ArbGroupTypes)
+n_in_group <- c()
+Pvec_list <- list()
+for(i in 1:n_groups){
+  ind <- which(nameSubtypes == ArbGroupTypes[i])
+  ts_in_group <- GroupInfo_clean$name[ind]
+  n_in_group <- length(ts_in_group)
+  Pvec <- rep(0, n_all_ts)
+  Pvec[ind] <- 1 / n_in_group
+  Pvec_list[[i]] <- Pvec
+}
+Pmat <- as.matrix(do.call(cbind, Pvec_list))
+nrow(Pmat)
+nrow(df_collectiveModes)
+Xkl <- t(Pmat) %*% CollectiveModes^2
+#barplot(Xkl[, 9])
+df_contrib <- as.data.frame(Xkl)
+colnames(df_contrib) <- paste("lambda", c(1:n_collectiveModes))
+df_contrib$ArbGroup <- ArbGroupTypes
+gathercols <- colnames(df_contrib)[1:n_collectiveModes]
+df_contrib <- gather_(df_contrib, "Lambda", "Value", gathercols)
+gg <- ggplot(df_contrib, aes(x = ArbGroup, y = Value)) + geom_bar(stat="identity")
+gg <- gg + facet_wrap(~ Lambda, ncol = 3) + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+gg
+#--
+PorterTom <- rnorm(n_all_ts, 0, 1)
+colnames(df_collectiveModes) <- paste("lambda", c(1:n_collectiveModes))
+df_collectiveModes$PorterTom <- PorterTom
+gathercols <- colnames(df_collectiveModes)
+df_collectiveModes <- gather_(df_collectiveModes, "Lambda", "Value", gathercols)
+gg <- ggplot(df_collectiveModes, aes(x = Value)) + geom_density()
+gg <- gg + facet_wrap(~ Lambda, ncol = 3)
+gg
+
+#====================================
+#Experiment with tstrends()
 xts_inMat <- cbind(xts_cpVWMA, xts_group)
-this_one <- "WTI"
+this_one <- "NIB"
 in_ts <- xts_inMat[, this_one]
 print(colnames(in_ts))
 out <- tsTrends(in_ts, quietly = F)
