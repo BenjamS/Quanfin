@@ -158,45 +158,6 @@ tsTrends <- function(in_ts, slope_window = 5,
   sd_RetShrt_pct_keep <- sd(RetShrt_pct_keep)
   cv_RetShrt_pct_keep <- sd_RetShrt_pct_keep / mu_RetShrt_pct_keep
   #-----------------------
-  #Trading simulator
-  Comission <- 7
-  seeds <- seq(100, 1000, 25)
-  gains_tot_exclud_falseStarts <- c()
-  gains_tot_all_slope_crossings <- c()
-  gains_short_all <- c()
-  gains_short_exclFalse <- c()
-  gains_long_all <- c()
-  gains_long_exclFalse <- c()
-  for(j in 1:length(seeds)){
-  seed <- seeds[j]
-  gains <- seed
-  for(i in 1:length(RetLong_pct_keep)){gains <- gains + gains * RetLong_pct_keep[i] - 2 * Comission}
-  gains_long_exclud_falseStarts <- gains
-  gains <- seed
-  for(i in 1:length(RetLong_pct)){gains <- gains + gains * RetLong_pct[i] - 2 * Comission}
-  gains_long_all_slope_crossings <- gains
-  #--
-  gains <- seed
-  for(i in 1:length(RetShrt_pct_keep)){gains <- gains - gains * RetShrt_pct_keep[i] - 2 * Comission}
-  gains_short_exclud_falseStarts <- gains
-  gains <- seed
-  for(i in 1:length(RetShrt_pct)){gains <- gains - gains * RetShrt_pct[i] - 2 * Comission}
-  gains_short_all_slope_crossings <- gains
-  #--
-  gains_tot_exclud_falseStarts[j] <- gains_short_exclud_falseStarts + gains_long_exclud_falseStarts
-  gains_tot_all_slope_crossings[j] <- gains_short_all_slope_crossings + gains_long_all_slope_crossings
-  gains_short_all[j] <- gains_short_all_slope_crossings
-  gains_short_exclFalse[j] <- gains_short_exclud_falseStarts
-  gains_long_all[j] <- gains_long_all_slope_crossings
-  gains_long_exclFalse[j] <- gains_long_exclud_falseStarts
-  }
-  df <- data.frame(seed = seeds, gains_tot_exclud_falseStarts, gains_tot_all_slope_crossings,
-                   gains_short_all, gains_short_exclFalse,
-                   gains_long_all, gains_long_exclFalse)
-  gathercols <- colnames(df)[2:ncol(df)]
-  df <- gather_(df, "Type", "Value", gathercols)
-  ggplot(df, aes(x = seed, y = Value)) + geom_line() + facet_wrap(~ Type, ncol = 3)
-  #-----------------------
   #--
   # df$Ret_pct[ind_dnBeg_keep]
   # gg <- ggplot(df, aes(x = Index, y = ts)) + geom_line()
