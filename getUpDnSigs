@@ -1,0 +1,103 @@
+getUpDnSigs <- function(in_ts, per_ema = 13,
+                        slope_window = 5,
+                        thresh_RetLong_pct = 0.01,
+                        thresh_RetShrt_pct = -0.01,
+                        before_window = 5, aft_window = 2)
+{
+  # Renders real and false up/down trend indices captured by getTsTrends() into
+  # buy/sell real and false signals, mostly useful for building an ML classifier. 
+  # in_ts should be an xts object. in_ts should be the raw time series, unsmoothed.
+  # in_ts will be smoothed below to an exponential moving avg with period defined
+  # by per_ema. Alternatively, in_ts can be smoothed via VWMA, in which case you
+  # enter in_ts as a list object containing both the price and volume series
+  # like this: in_ts <- list(xts_cp, xts_vol)
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2", "plyr", "tidyr", "quantmod")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #---------------------
+  if(class(in_ts) == "list"){
+    in_ts_cp <- in_ts[[1]]
+    #datevec <- index(in_ts)
+    in_ts_vol <- in_ts[[2]]
+    in_ts_smoothed <- VWMA(in_ts_cp, in_ts_vol)
+  }else{
+    #datevec <- index(in_ts)
+    in_ts_smoothed <- EMA(in_ts, per_ema)
+  }
+  #---------------------
+  out <- getTsTrends(in_ts_smoothed, slope_window,
+              thresh_RetLong_pct,
+              thresh_RetShrt_pct, quietly = T)
+  ind_upBeg_keep <- out[[1]]
+  ind_upFin_keep <- out[[2]]
+  ind_dnBeg_keep <- out[[3]]
+  ind_dnFin_keep <- out[[4]]
+  ind_upBeg_false <- out[[5]]
+  ind_upFin_false <- out[[6]]
+  ind_dnBeg_false <- out[[7]]
+  ind_dnFin_false <- out[[8]]
+  #---------------
+  #Create Signals
+  df <- fortify(in_ts_smoothed)
+  colnames(df)[2] <- "ts"
+  df$Index <- as.Date(df$Index)
+  df$SigUp <- NA
+  df$SigUp[ind_upBeg_keep] <- "Uptrend Start"
+  df$SigUp[ind_upFin_keep] <- "Uptrend Stop"
+  df$SigUp[ind_upBeg_false] <- "Uptrend False Start"
+  df$SigUp[ind_upFin_false] <- "Uptrend False Stop"
+  df$SigDown <- NA
+  df$SigDown[ind_dnBeg_keep] <- "Downtrend Start"
+  df$SigDown[ind_dnFin_keep] <- "Downtrend Stop"
+  df$SigDown[ind_dnBeg_false] <- "Downtrend False Start"
+  df$SigDown[ind_dnFin_false] <- "Downtrend False Stop"
+  #Create signal var over "window of opportunity" determined by params
+  #before_window and aft_window. before_window should be greater than aft_window.
+  #----------
+  #Long Sig
+  #----------
+  #Hold
+  df$SigUpWin <- "Hold"
+  #Buy/Sell
+  for(i in 1:n_upFin_keep){df$SigUpWin[(ind_upFin_keep[i] - before_window):(ind_upFin_keep[i] + aft_window)] <- "Uptrend Stop"}
+  for(i in 1:n_upBeg_keep){df$SigUpWin[(ind_upBeg_keep[i] - before_window):(ind_upBeg_keep[i] + aft_window)] <- "Uptrend Start"}
+  #Overwrite buy/sell sigs outside pct return thresholds as false signals
+  for(i in 1:n_upFin_false){df$SigUpWin[(ind_upFin_false[i] - before_window):(ind_upFin_false[i] + aft_window)] <- "Uptrend False Stop"}
+  for(i in 1:n_upBeg_false){df$SigUpWin[(ind_upBeg_false[i] - before_window):(ind_upBeg_false[i] + aft_window)] <- "Uptrend False Start"}
+  #----------
+  #Short Sig
+  #----------
+  #Hold
+  df$SigDownWin <- "Hold"
+  for(i in 1:n_dnFin_keep){df$SigDownWin[(ind_dnFin_keep[i] - before_window):(ind_dnFin_keep[i] + aft_window)] <- "Downtrend Start"}
+  for(i in 1:n_dnBeg_keep){df$SigDownWin[(ind_dnBeg_keep[i] - before_window):(ind_dnBeg_keep[i] + aft_window)] <- "Downtrend Stop"}
+  #Overwrite buy/sell sigs outside thresholds as false signals
+  for(i in 1:n_dnFin_false){df$SigDownWin[(ind_dnFin_false[i] - before_window):(ind_dnFin_false[i] + aft_window)] <- "Downtrend False Start"}
+  for(i in 1:n_dnBeg_false){df$SigDownWin[(ind_dnBeg_false[i] - before_window):(ind_dnBeg_false[i] + aft_window)] <- "Downtrend False Stop"}
+  
+  # #Get trimmed ts index to first uptrend start point and last downtrend stop point
+  # #so that ML training not messed up
+  # ind_tsStart <- min(ind_upBeg[1], ind_dnBeg[1]) - before_window
+  # ind_tsFinish <- max(ind_upFin[n_upFin], ind_dnFin[n_dnFin]) + aft_window
+  # # df <- df[ind_tsStart:ind_tsFinish, ]
+  # n_ts_trimd <- nrow(df)
+  #---------------------------------
+  # #Output df with the original ts and its rolling slope series (mean, sd, cv),
+  # #and signal vars.
+  # df_ts <- df[, c("Index", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUpWin", "SigDownWin")]
+  # #Output dfs with only trend start/finish (buy/sell) point data
+  # df_ts_upEvents <- subset(df, SigUp %in% c("Uptrend Start"))
+  # df_ts_upEvents <- df_ts_upEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigUp")]
+  # df_ts_dnEvents <- subset(df, SigDown %in% c("Downtrend Start"))
+  # df_ts_dnEvents <- df_ts_dnEvents[, c("Index", "Ret_pct", "ts", "dydxmu", "dydxsd", "ldydxcv", "SigDown")]
+  #---------------------------------
+  return(df)
+  
+}
