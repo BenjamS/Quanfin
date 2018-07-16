@@ -1,0 +1,580 @@
+tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
+                     thresh_pct_uptrend = 1.5,
+                     thresh_pct_dntrend = -1.5,
+                     Commission = 7,
+                     invest_t0 = 500,
+                     quietly = T)
+{
+  # in_ts should be an xts object. in_ts should be the raw time series, unsmoothed.
+  # in_ts will be smoothed below to an exponential moving avg with period defined
+  # by per_ema. Alternatively, in_ts can be smoothed via VWMA, in which case you
+  # enter in_ts as a list object containing both the price and volume series
+  # like this: in_ts <- list(xts_cp, xts_vol)
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2", "plyr", "tidyr", "quantmod")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #----------------------
+  #in_ts <- xts_cp[, "NIB"]
+  if(class(in_ts)[1] == "list"){
+    xts_cp <- in_ts[[1]]
+    #datevec <- index(in_ts)
+    xts_vol <- in_ts[[2]]
+    xts_cp_smoothed <- VWMA(xts_cp, xts_vol)
+  }else{
+    #datevec <- index(in_ts)
+    xts_cp <- in_ts
+    xts_cp_smoothed <- EMA(xts_cp, per_ema)
+  }
+  xts_mat <- merge(xts_cp, xts_cp_smoothed)
+  df <- fortify(xts_mat)
+  colnames(df) <- c("Date", "ts", "ts_ema")
+  #---------------------
+  outlist <- getTsTrends(xts_cp_smoothed, per_slope, quietly = T)
+  ind_upBeg <- outlist[[1]]
+  ind_upFin <- outlist[[2]]
+  ind_dnBeg <- outlist[[3]]
+  ind_dnFin <- outlist[[4]]
+  #----------------------
+  #Get value of trend increase/decrease (as magnitude and percentage)
+  #and trend durations
+  #Uptrends
+  df_a <- df
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$UpStartDate <- NA
+  df_a$UpStartDate[ind_upBeg] <- as.character(df_a$Date[ind_upBeg])
+  df_a <- subset(df_a, is.na(UpStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- df
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$UpStopDate <- NA
+  df_b$UpStopDate[ind_upFin] <- as.character(df_b$Date[ind_upFin])
+  df_b <- subset(df_b, is.na(UpStopDate) != T)
+  df_b$Date <- NULL
+  df_upTrends <- cbind(df_a, df_b)
+  df_upTrends$Change <- df_upTrends$`Stop ts` - df_upTrends$`Start ts`
+  df_upTrends$`Pct. Change` <- 100 * df_upTrends$Change / df_upTrends$`Start ts`
+  df_upTrends$Duration <- ind_upFin - ind_upBeg
+  df_upTrends$`False uptrend` <- ifelse(df_upTrends$`Pct. Change` < thresh_pct_uptrend, 1, 0)
+  df_upTrends$UpStartDate <- as.Date(df_upTrends$UpStartDate)
+  df_upTrends$UpStopDate <- as.Date(df_upTrends$UpStopDate)
+  #Downtrends
+  df_a <- df
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$DnStartDate <- NA
+  df_a$DnStartDate[ind_dnBeg] <- as.character(df_a$Date[ind_dnBeg])
+  df_a <- subset(df_a, is.na(DnStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- df
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$DnStopDate <- NA
+  df_b$DnStopDate[ind_dnFin] <- as.character(df_b$Date[ind_dnFin])
+  df_b <- subset(df_b, is.na(DnStopDate) != T)
+  df_b$Date <- NULL
+  df_dnTrends <- cbind(df_a, df_b)
+  df_dnTrends$Change <- df_dnTrends$`Stop ts` - df_dnTrends$`Start ts`
+  df_dnTrends$`Pct. Change` <- 100 * df_dnTrends$Change / df_dnTrends$`Start ts`
+  df_dnTrends$Duration <- ind_dnFin - ind_dnBeg
+  df_dnTrends$`False downtrend` <- ifelse(df_dnTrends$`Pct. Change` > thresh_pct_dntrend, 1, 0)
+  df_dnTrends$DnStartDate <- as.Date(df_dnTrends$DnStartDate)
+  df_dnTrends$DnStopDate <- as.Date(df_dnTrends$DnStopDate)
+  #==================================
+  #Trading simulator
+  tradeIt <- function(invest_t0, Commission, pctRet_vec){
+      gains <- invest_t0
+      gains_vec <- c()
+      for(i in 1:length(pctRet_vec)){gains <- gains + (gains - Commission) * pctRet_vec[i] - Commission
+      gains_vec[i] <- gains}
+      return(list(gains, gains_vec))
+  }
+  #Naive uptrends -- strictly follow signals
+  pctRet_vec <- df_upTrends$`Pct. Change` / 100
+  out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  NetGain_up_naive <- out[[1]] - invest_t0
+  trajectory_naive <- out[[2]]
+  #Shrewd uptrends -- selectively follow signals
+  ind_shrewd <- which(df_upTrends$`False uptrend` == 0)
+  pctRet_vec <- df_upTrends$`Pct. Change`[ind_shrewd] / 100
+  out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  NetGain_up_shrewd <- out[[1]] - invest_t0
+  trajectory_shrewd <- out[[2]]
+  
+  df_trade <- df
+  df_trade$Investment_naive <- NA
+  df_trade$Investment_naive[which(df$Date %in% df_upTrends$UpStopDate)] <- trajectory_naive
+  df_trade$Investment_shrewd <- NA
+  df_trade$Investment_shrewd[which(df$Date %in% df_upTrends$UpStopDate[ind_shrewd])] <- trajectory_shrewd
+  df_trade$Year <- year(df_trade$Date)
+  df_trade_up <- df_trade
+
+
+
+#   wind_vec <- seq(50, 400, 25)
+#   mu_vec <- c()
+#   cv_vec <- c()
+# for(w in 1:length(wind_vec))
+# {
+#   wind <- wind_vec[w]
+#   i_stop <- nrow(df) - per_ema - wind
+#   NetGain_up_naive_vec <- c()
+#   for(i in 1:i_stop){
+#     ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
+#     pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
+#     out <- tradeIt(invest_t0, Comission, pctRet_vec)
+#     NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
+#   }
+#   mu_vec[w] <- mean(NetGain_up_naive_vec)
+#   cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
+# }
+  # hist(mu_vec)
+  # plot(mu_vec, cv_vec)
+
+#  library(forecast)
+  
+  #closer look
+  wind <- 110
+  i_stop <- nrow(df) - per_ema - wind
+  NetGain_up_naive_vec <- c()
+  cv_naive_vec <- c()
+  for(i in 1:i_stop){
+    ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
+    pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
+    out <- tradeIt(invest_t0, Comission, pctRet_vec)
+    net <- out[[1]] - invest_t0
+    NetGain_up_naive_vec[i] <- net
+    cv_naive_vec[i] <- sd(out[[2]]) / net
+  }
+  
+  # hist(NetGain_up_naive_vec)
+  # plot(c(1:i_stop), NetGain_up_naive_vec)
+  # trend <- EMA(NetGain_up_naive_vec, 8)
+  # NetGain_up_naive_dt <- NetGain_up_naive_vec - trend
+  #plot(c(1:i_stop), NetGain_up_naive_vec)
+  #plot(c(1:i_stop), cv_naive_vec)
+  #plot(cv_naive_vec, NetGain_up_naive_vec)
+  # period <- findfrequency(NetGain_up_naive_vec)
+  # print(paste("period = ", period))
+  # period <- findfrequency(cv_naive_vec)
+  # print(paste("period = ", period))
+  
+  df_freq <- data.frame(t = c(1:length(NetGain_up_naive_dt)), 
+                        NetGain_up_naive_vec, NetGain_up_naive_dt,
+                        cv_naive = cv_naive_vec)
+  gg <- ggplot(df_freq, aes(x = t, y = NetGain_up_naive_vec)) + geom_line()
+  #gg <- gg + geom_vline(xintercept = seq(1, nrow(df_freq), period), color = "green")
+  print(gg)
+  gg <- ggplot(df_freq, aes(x = NetGain_up_naive_vec)) + geom_histogram()
+  print(gg)
+  # df_upTrends$Year <- year(df_upTrends$UpStartDate)
+  # years_covered <- unique(df_upTrends$Year)
+  # n_yrs <- length(years_covered)
+  # u <- df_upTrends$Year
+  # NetGain_up_naive_vec <- c()
+  # trajectory_naive_list <- list()
+  # n_trades_naive_vec <- c()
+  # NetGain_up_shrewd_vec <- c()
+  # trajectory_shrewd_list <- list()
+  # n_trades_shrewd_vec <- c()
+  # for(y in 1:n_yrs)
+  #   {
+  #   #--Naive
+  #   this_year <- years_covered[y]
+  #   pctRet_vec <- df_upTrends$`Pct. Change`[which(u == this_year)] / 100
+  #   out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  #   NetGain_up_naive_vec[y] <- out[[1]] - invest_t0
+  #   trajectory_naive_list[[y]] <- out[[2]]
+  #   n_trades_naive_vec[y] <- length(pctRet_vec)
+  #   #--Shrewd
+  #   ind_year <- which(u == this_year)
+  #   ind_ind_shrewd <- which(df_upTrends$`False uptrend`[ind_year] == 0)
+  #   pctRet_vec <- df_upTrends$`Pct. Change`[ind_year[ind_ind_shrewd]] / 100
+  #   out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  #   NetGain_up_shrewd_vec[y] <- out[[1]] - invest_t0
+  #   trajectory_shrewd_list[[y]] <- out[[2]]
+  #   n_trades_shrewd_vec[y] <- length(pctRet_vec)
+  # }
+  
+  # df_plot <- df
+  # df_plot$Year <- year(df$Date)
+  # df_plot$
+
+  
+  if(quietly == F){
+    #===================================================
+    #4 Graphs
+    #===================================================
+    #===================================================
+    # Uptrends Plots
+    #===================================================
+    #1a) Plot of the ts with moving avg (ema or vwma)
+    # with up trends shaded green and false uptrends shaded violet.
+    gathercols <- colnames(df)[2:ncol(df)]
+    df_plot1 <- gather_(df, "Type", "Value", gathercols)
+    df_plot1$zero <- 0
+
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = Value, color = Type))
+    gg <- gg + theme(legend.position = "none")
+    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                             ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank(),
+                     legend.position = "none")
+    gg_Up1 <- gg
+    #----
+    # 1b) Plot trade simulation
+    df_trade_plot <- df_trade_up
+    df_trade_plot$ts <- NULL
+    df_trade_plot$ts_ema <- NULL
+    colnames(df_trade_plot)[2:3] <- c("Naive", "Shrewd")
+    gathercols <- colnames(df_trade_plot)[2:3]
+    df_trade_plot <- gather_(df_trade_plot, "Type", "Invest. Traject.", gathercols)
+    df_upTrends_plot <- df_upTrends
+    gg <- ggplot()
+    gg <- gg + geom_point(data = df_trade_plot, aes(x = Date, y = `Invest. Traject.`, color = Type))
+    gg <- gg + geom_rect(data = df_upTrends_plot, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                                      ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    gg <- gg + theme(legend.position = "none",
+                     axis.title.x = element_blank(),
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank())
+    gg_Up2 <- gg
+    #----
+    # 1c) Plot bars indicating pct. changes of each trade event.
+    df_upTrends$ymin <- NA
+    df_upTrends$ymax <- NA
+    for(i in 1:nrow(df_upTrends))
+    {
+      df_upTrends$ymin[i] <- min(df_upTrends$`Pct. Change`[i], 0)
+      df_upTrends$ymax[i] <- max(df_upTrends$`Pct. Change`[i], 0)
+    }
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = zero), linetype = "dotted")
+    gg <- gg + theme(legend.position = "none")
+    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                                 ymin = ymin, ymax = ymax, fill = factor(`False uptrend`)), alpha = 0.3)
+    gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    #gg <- gg + scale_fill_gradient(low = "white", high = "green")
+    gg <- gg + theme(legend.title = element_blank())
+    gg <- gg + ylab("Pct. Change")
+    gg_Up3 <- gg
+    #--
+    #Arrange these plots into one display
+    gg_Up <- ggarrange(gg_Up1, gg_Up2, gg_Up3, ncol = 1, nrow = 3, align = "v")
+    print(gg_Up)
+    #=====================================
+    #=====================================
+    # year_vec <- unique(year(df$Date))
+    # n_yrs <- length(year_vec)
+    # ggUp_by_year_list <- list()
+    # for(y in 1:n_yrs)
+    # {
+    #   this_year <- year_vec[y]
+    #   df_trade_plot <- df_trade_up
+    #   df_trade_plot$ts <- NULL
+    #   df_trade_plot$ts_ema <- NULL
+    #   df_trade_plot <- subset(df_trade_plot, Year == this_year)
+    #   colnames(df_trade_plot)[2:3] <- c("Naive", "Shrewd")
+    #   gathercols <- colnames(df_trade_plot)[2:3]
+    #   df_trade_plot <- gather_(df_trade_plot, "Type", "Invest. Traject.", gathercols)
+    #   df_upTrends_plot <- df_upTrends
+    #   df_upTrends_plot$Year <- year(df_upTrends_plot$UpStopDate)
+    #   df_upTrends_plot <- subset(df_upTrends_plot, Year == this_year)
+    #   gg <- ggplot()
+    #   gg <- gg + geom_point(data = df_trade_plot, aes(x = Date, y = `Invest. Traject.`, color = Type))
+    #   gg <- gg + geom_rect(data = df_upTrends_plot, aes(xmin = UpStartDate, xmax = UpStopDate,
+    #                                                     ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    #   gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    #   if(this_year == year_vec[n_yrs])
+    #   {
+    #     gg <- gg + theme(legend.position = "none")
+    #   }else{
+    #     gg <- gg + theme(legend.position = "none",
+    #                      axis.title.x = element_blank(),
+    #                      axis.text.x=element_blank(),
+    #                      axis.ticks.x=element_blank())
+    #   }
+    #   
+    #  ggUp_by_year_list[[y]] <- gg
+    # }
+    # #cowplot::plot_grid(plotlist = ggUp_by_year_list, ncol = 1)
+    # qq <- do.call("ggarrange", c(ggUp_by_year_list, ncol = 1))
+    # print(qq)
+    # library(gridExtra)
+    # qq <- do.call("grid.arrange", c(ggUp_by_year_list, ncol = 1))
+    # ggUp_yearly <- ggarrange(qq, ncol = 1, nrow = n_yrs,align = "v")
+    # print(ggUp_yearly)
+    
+    ggUp_by_year[[n_yrs]]
+    gg_Up2 <- gg
+    
+    #=====================================
+    #=====================================
+    #=====================================
+    
+    
+    
+    
+    
+    #===================================================
+    # Downtrends Plots
+    #===================================================
+    #2a) Plot of the ts with moving avg (ema or vwma)
+    # with down trends shaded green and false down trends shaded violet.
+    # gg <- ggplot()
+    # gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = Value, color = Type))
+    # gg <- gg + theme(legend.position = "none")
+    # gg <- gg + geom_rect(data = df_dnTrends, aes(xmin = DnStartDate, xmax = DnStopDate,
+    #                                              ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    # gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    # gg <- gg + theme(axis.title.x = element_blank(),
+    #                  axis.text.x=element_blank(),
+    #                  axis.ticks.x=element_blank(),
+    #                  legend.title = element_blank())
+    # gg_Dn1 <- gg
+    # #----
+    # # 2b) Plot bars indicating pct. changes of each trade event.
+    # df_dnTrends$ymin <- NA
+    # df_dnTrends$ymax <- NA
+    # for(i in 1:nrow(df_dnTrends))
+    # {
+    #   df_dnTrends$ymin[i] <- min(df_dnTrends$`Pct. Change`[i], 0)
+    #   df_dnTrends$ymax[i] <- max(df_dnTrends$`Pct. Change`[i], 0)
+    # }
+    # 
+    # gg <- ggplot()
+    # gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = zero))
+    # gg <- gg + theme(legend.position = "none")
+    # gg <- gg + geom_rect(data = df_dnTrends, aes(xmin = DnStartDate, xmax = DnStopDate,
+    #                                              ymin = ymin, ymax = ymax, fill = factor(`False downtrend`)), alpha = 0.3)
+    # gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    # #gg <- gg + scale_fill_gradient(low = "white", high = "green")
+    # gg <- gg + theme(legend.title = element_blank())
+    # gg <- gg + ylab("Pct. Change")
+    # gg_Dn2 <- gg
+    # #--
+    # #Arrange these plots into one display
+    # gg_Dn <- ggarrange(gg_Dn1, gg_Dn2, ncol = 1, nrow = 2, align = "v")
+    # print(gg_Dn)
+    
+  }
+  #NetGain_up_shrewd
+
+    
+  n_trades_up_naive <- nrow(df_upTrends)
+  u <- df_upTrends$`False uptrend`
+  n_trades_up_shrewd <- nrow(df_upTrends[which(u == 0), ])
+  outvec <- c(NetGain_up_naive, NetGain_up_shrewd, 
+              n_trades_up_naive, n_trades_up_shrewd)
+  return(outvec)
+  
+}  
+    
+    
+    
+    
+    
+    
+ 
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+#     
+#     
+#     
+#     
+#     
+#     if(quietly == F){
+#       
+#       #-----------------------
+#       sum_RetLong_mag_keep <- sum(RetLong_mag_keep)
+#       mu_RetLong_mag_keep <- mean(RetLong_mag_keep)
+#       sd_RetLong_mag_keep <- sd(RetLong_mag_keep)
+#       cv_RetLong_mag_keep <- sd_RetLong_mag_keep / mu_RetLong_mag_keep
+#       mu_RetLong_pct_keep <- mean(RetLong_pct_keep)
+#       sd_RetLong_pct_keep <- sd(RetLong_pct_keep)
+#       cv_RetLong_pct_keep <- sd_RetLong_pct_keep / mu_RetLong_pct_keep
+#       
+#       sum_RetShrt_mag_keep <- sum(RetShrt_mag_keep)
+#       mu_RetShrt_mag_keep <- mean(RetShrt_mag_keep)
+#       sd_RetShrt_mag_keep <- sd(RetShrt_mag_keep)
+#       cv_RetShrt_mag_keep <- sd_RetShrt_mag_keep / mu_RetShrt_mag_keep
+#       mu_RetShrt_pct_keep <- mean(RetShrt_pct_keep)
+#       sd_RetShrt_pct_keep <- sd(RetShrt_pct_keep)
+#       cv_RetShrt_pct_keep <- sd_RetShrt_pct_keep / mu_RetShrt_pct_keep
+#       
+#       #Interesting... the up trend start (buy) points coincide with max ldydxcv points
+#       #And these are all at about the same value (for SPY anyway)
+#       ind_ind_muldydxcv_up <- which(df$ldydxcv[ind_upBeg_keep] > 0)
+#       mu_ldydx_cv_up <- mean(df$ldydxcv[ind_upBeg_keep[ind_ind_muldydxcv_up]])
+#       sd_ldydx_cv_up <- sd(df$ldydxcv[ind_upBeg[ind_ind_muldydxcv_up]])
+#       cv_ldydx_cv_up <- sd_ldydx_cv_up / mu_ldydx_cv_up
+#       #
+#       mu_dydx_mu_up <- mean(df$dydxmu[ind_upBeg_keep])
+#       sd_dydx_mu_up <- sd(df$dydxmu[ind_upBeg_keep])
+#       cv_dydx_mu_up <- sd_dydx_mu_up / mu_dydx_mu_up
+#       #
+#       mu_dydx_mu_dn <- mean(df$dydxmu[ind_dnBeg_keep])
+#       sd_dydx_mu_dn <- sd(df$dydxmu[ind_dnBeg_keep])
+#       cv_dydx_mu_dn <- sd_dydx_mu_dn / mu_dydx_mu_dn
+#       #---------------------------------
+#       
+#       outVars <- data.frame(
+#         # ind_tsStart = ind_tsStart,
+#         # ind_tsFinish = ind_tsFinish,
+#         
+#         n_uptrends_kept = n_upBeg_keep,
+#         n_downtrends_kept = n_dnBeg_keep,
+#         n_uptrends_false = n_upBeg_false,
+#         n_downtrends_false = n_dnBeg_false,
+#         
+#         mudydx = mu_dydx_mu,
+#         cvdydx = cv_dydx_mu,
+#         mudydxup = mu_dydx_mu_up,
+#         cvdydxup = cv_dydx_mu_up,
+#         mudydxdn = mu_dydx_mu_dn,
+#         cvdydxdn = cv_dydx_mu_dn,
+#         
+#         muLdydxCVup = mu_ldydx_cv_up, 
+#         cvLdydxCVup = cv_ldydx_cv_up,
+#         
+#         RetMagUp_sum = sum_RetLong_mag_keep,
+#         RetMagUp_mu = mu_RetLong_mag_keep,
+#         RetMagUp_cv = cv_RetLong_mag_keep,
+#         RetPctUp_mu = mu_RetLong_pct_keep,
+#         RetPctUp_cv = cv_RetLong_pct_keep,
+#         
+#         RetMagDown_sum = sum_RetShrt_mag_keep,
+#         RetMagDown_mu = mu_RetShrt_mag_keep,
+#         RetMagDown_cv = cv_RetShrt_mag_keep,
+#         RetPctDown_mu = mu_RetShrt_pct_keep,
+#         RetPctDown_cv = cv_RetShrt_pct_keep
+#       )
+#       
+#       
+#       cat("Raw length of time series: ", n_ts, "\n",
+#           #"Trimmed length of time series: ", n_ts_trimd, "\n",
+#           "Num. raw uptrend signals: ", n_upBeg_raw, "\n",
+#           "Num. raw downtrend signals: ", n_upFin_raw, "\n",
+#           "Num. raw uptrend signals after bookend adjust: ", n_upBeg, "\n",
+#           "Num. raw downtrend signals after bookend adjust: ", n_dnBeg, "\n",
+#           "Num. false uptrend signals: ", n_upBeg_false, "\n",
+#           "Num. false downtrend signals: ", n_dnBeg_false, "\n",
+#           "Num. uptrend signals within pct change thresholds (kept): ", n_upBeg_keep, "\n",
+#           "Num. downtrend signals within pct change thresholds (kept): ", n_dnBeg_keep, "\n",
+#           "Sum of all kept uptrends: ", sum_RetLong_mag_keep, "\n",
+#           "Sum of all kept downtrends: ", sum_RetShrt_mag_keep, "\n",
+#           "Mean change kept uptrends: ", mu_RetLong_mag_keep, "\n",
+#           "Mean change kept downtrends: ", mu_RetShrt_mag_keep, "\n",
+#           "Mean pct. change kept uptrends: ", mu_RetLong_pct_keep, "\n",
+#           "Mean pct. change kept downtrends: ", mu_RetShrt_pct_keep, "\n",
+#           "CV change kept uptrends: ", cv_RetLong_mag_keep, "\n",
+#           "CV change kept downtrends: ", cv_RetShrt_mag_keep, "\n",
+#           "Mean rolling mean slope: ", mu_dydx_mu, "\n",
+#           "CV roling mean slope: ", cv_dydx_mu, "\n",
+#           "Mean rolling mean slope at kept uptrend starts: ", mu_dydx_mu_up, "\n",
+#           "CV rolling mean slope at kept uptrend starts: ", cv_dydx_mu_up, "\n",
+#           "Mean rolling mean slope at kept downtrend starts: ", mu_dydx_mu_dn, "\n",
+#           "CV rolling mean slope at kept downtrend starts: ", cv_dydx_mu_dn, "\n",
+#           "Mean logged rolling cv of (abs val of) slope at kept uptrend starts: ", mu_ldydx_cv_up, "\n",
+#           "CV logged rolling cv of (abs val of) slope at kept uptrend starts: ", cv_ldydx_cv_up
+#       )
+#       
+#     
+#        
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     
+#     #3
+#     #Plot roling slope (mean, sd, and cv) with trend start/finish (buy/sell) points overlaid
+#     #The dydxmu plot includes the mean
+#     #The ldydxcv plot includes the mean only of buy points > 0
+#     df_plot <- df_plotUp %>% gather(ts_type, Value, dydxmu:ldydxcv)
+#     gg <- ggplot()
+#     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = zero), color = "red", linetype = "dotted")
+#     gg <- gg + geom_rect(data = df_plotUp_ret,
+#                          aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = `Pct Change/Time`), alpha = 0.9)
+#     gg <- gg + scale_fill_gradient(low = "white", high = "green")
+#     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = Value))
+#     # gg <- gg + theme(#axis.title.x = element_blank(),
+#     #                  #axis.text.x = element_blank(),
+#     #                  #axis.ticks.x = element_blank(),
+#     #                  #axis.title.y = element_blank()
+#     #                  )
+#     gg <- gg + facet_wrap(~ ts_type, ncol = 1, scales = "free")
+#     gg <- gg + xlab("Date") + ylab("Value")
+#     gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
+#     gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
+#     gg3 <- gg
+#     print(gg3)
+#     #===================================================
+#     #4
+#     #Now same for downtrends
+#     df_plot <- df_plotDn %>% gather(ts_type, Value, dydxmu:ldydxcv)
+#     gg <- ggplot()
+#     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = zero), color = "red", linetype = "dotted")
+#     gg <- gg + geom_rect(data = df_plotDn_ret,
+#                          aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = `Pct Change/Time`), alpha = 0.9)
+#     gg <- gg + scale_fill_gradient(low = "green", high = "white")
+#     gg <- gg + geom_line(data = df_plot, aes(x = Index, y = Value))
+#     # gg <- gg + theme(#axis.text.x = element_blank(),
+#     #                  #axis.ticks.x = element_blank(),
+#     #                  #axis.title.y = element_blank()
+#     #                 )
+#     gg <- gg + facet_wrap(~ ts_type, ncol = 1, scales = "free")
+#     gg <- gg + xlab("Date") + ylab("Value")
+#     gg <- gg + geom_hline(data = data.frame(yint = mu_dydx_mu_up, ts_type = "dydxmu"), aes(yintercept = yint), color = "violet", linetype = "dashed")
+#     gg <- gg + geom_hline(data = data.frame(yint = mu_ldydx_cv_up, ts_type = "ldydxcv"), aes(yintercept = yint), color = "violet",linetype = "dashed")
+#     gg4 <- gg
+#     print(gg4)
+#     #---------------------------------------------------
+#     gg_finalUp <- ggarrange(gg1, gg3, ncol = 1, nrow = 2)
+#     gg_finalDn <- ggarrange(gg2, gg4, ncol = 1, nrow = 2)
+#     print(gg_finalUp)
+#     print(gg_finalDn)
+#   }
+#   
+#   
+#   
+#   
+#   
+#   
+# 
+#   # outlist <- list(df_ts, df_ts_upEvents, df_ts_dnEvents, outVars)
+#   # return(outlist)
+# 
