@@ -1,4 +1,4 @@
-setwd("D:/OneDrive - CGIAR/Documents")
+#setwd("D:/OneDrive - CGIAR/Documents")
 source('./tsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
@@ -20,41 +20,143 @@ library(scales)
 fromdate<-"2012-01-01"; todate <- "2018-07-10"
 getGlobTrnds(fromdate, todate)
 rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD", "MIDD"))
-xts_cp <- cpgtetfmat[, -rmcol]
-xts_vol <- volgtetfmat[, -rmcol]
-namevec <- colnames(xts_cp)
+xts_cp_mat <- cpgtetfmat[, -rmcol]
+xts_vol_mat <- volgtetfmat[, -rmcol]
+namevec <- colnames(xts_cp_mat)
 n_names <- length(namevec)
 
-o <- apply(xts_cp, 2, function(x) length(which(is.na(x))))
+o <- apply(xts_cp_mat, 2, function(x) length(which(is.na(x))))
 table(o)
 rmcols <- which(o > 60)
-colnames(xts_cp)[rmcols]
-xts_cp <- xts_cp[, -rmcols]
-xts_vol <- xts_vol[, -rmcols]
-o <- apply(xts_cp, 1, function(x) length(which(is.na(x))))
+colnames(xts_cp_mat)[rmcols]
+xts_cp_mat <- xts_cp_mat[, -rmcols]
+xts_vol_mat <- xts_vol_mat[, -rmcols]
+o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
 table(o)
-xts_cp <- na.spline(xts_cp)
-xts_vol <- na.spline(xts_vol)
-o <- apply(xts_cp, 1, function(x) length(which(is.na(x))))
+xts_cp_mat <- na.spline(xts_cp_mat)
+xts_vol_mat <- na.spline(xts_vol_mat)
+o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
 table(o)
 #---------------
-n_ts <- ncol(xts_cp)
+n_ts <- ncol(xts_cp_mat)
 #---------------
-per_ema <- 13
-datevec <- index(xts_cp)
-xts_cpEMA <- xts(apply(xts_cp, MARGIN = 2, FUN = "EMA", n = per_ema), datevec)
+# #Grid search for best per_ema + per_slope combo
+# in_ts <- xts_cp_mat[, "WTI"]
+# per_ema_vec <- c(3, 5, 8, 13, 21, 34, 55, 89, 144)
+# per_slope_vec <- c(3, 5, 8, 13, 21, 34, 55, 89, 144)
+# grid_naive <- matrix(NA, nrow = length(per_ema_vec), ncol = length(per_slope_vec))
+# grid_shrewd <- matrix(NA, nrow = length(per_ema_vec), ncol = length(per_slope_vec))
+# for(i in 1:length(per_ema_vec)){
+#   print(i)
+#   for(j in 1:length(per_slope_vec)){
+#     print(j)
+#     out <- tradeSim(in_ts, 
+#                        per_ema = per_ema_vec[i], 
+#                        per_slope = per_slope_vec[j],
+#                        thresh_pct_uptrend = 1.5,
+#                        thresh_pct_dntrend = -1.5,
+#                        Commission = 7,
+#                        invest_t0 = 500,
+#                        quietly = T)
+#     grid_naive[i, j] <- out[1]
+#     grid_shrewd[i, j] <- out[2]
+#     
+#   }
+# }
+# df_naive <- as.data.frame(grid_naive)
+# colnames(df_naive) <- paste("slope", per_slope_vec)
+#==============================
+# Search for ts with highest return
+NetGain_up_naive_vec <- c()
+NetGain_up_shrewd_vec <- c()
+for(i in 1:ncol(xts_cp_mat)){
+  in_ts <- xts_cp_mat[, i]
+  out <- tradeSim(in_ts, 
+                  per_ema = 3, 
+                  per_slope = 3,
+                  thresh_pct_uptrend = 1.5,
+                  thresh_pct_dntrend = -1.5,
+                  Commission = 7,
+                  invest_t0 = 500,
+                  quietly = F)
+  
+  cat("This ts: ", colnames(in_ts), "\n",
+    "NetGain_up_naive: ", out[1], "\n",
+    "NetGain_up_shrewd: ", out[2]
+    )
+  NetGain_up_naive_vec[i] <- out[1] 
+  NetGain_up_shrewd_vec[i] <- out[2]
+  
+}
+
+df_x <- data.frame(name = colnames(xts_cp_mat), 
+                   Naive.Net.Gain = NetGain_up_naive_vec,
+                   Shrewd.Net.Gain = NetGain_up_shrewd_vec)
+gg <- ggplot(df_x, aes(x = Naive.Net.Gain, y = Shrewd.Net.Gain)) + geom_point()
+gg <- gg + scale_x_log10() + scale_y_log10()
+gg <- gg + geom_text(aes(label = name))
+gg
+
+
+# Take a closer look
+in_ts <- xts_cp_mat[, "WTI"]
+out <- tradeSim(in_ts, 
+                per_ema = 3, 
+                per_slope = 3,
+                thresh_pct_uptrend = 1.5,
+                thresh_pct_dntrend = -1.5,
+                Commission = 7,
+                invest_t0 = 500,
+                quietly = F)
+
+cat("This ts: ", colnames(in_ts), "\n",
+    "Naive net gain: ", out[1], "\n",
+    "Shrewd net gain: ", out[2], "\n",
+    "Number naive trades: ", out[3] - out[4], "\n",
+    "Number shrewd trades: ", out[4], "\n",
+    "Total number of trades: ", out[3]
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+datevec <- index(xts_cp_mat)
+xts_cp_matEMA <- xts(apply(xts_cp_mat, MARGIN = 2, FUN = "EMA", n = per_ema), datevec)
 #---------------
 list_df <- list()
 for(i in 1:n_ts)
 {
-  this_sec <- colnames(xts_cp)[i]
-  out_df <- fortify(VWMA(xts_cp[, i], xts_vol[, i]))
+  this_sec <- colnames(xts_cp_mat)[i]
+  out_df <- fortify(VWMA(xts_cp_mat[, i], xts_vol_mat[, i]))
   colnames(out_df)[2] <- this_sec
   list_df[[i]] <- out_df
 }
 df_vwma <- join_all(list_df)
-datevec <- index(xts_cp)
-xts_cpVWMA <- xts(df_vwma[, -1], datevec)
+datevec <- index(xts_cp_mat)
+xts_cp_matVWMA <- xts(df_vwma[, -1], datevec)
 # rm_rows <- which(is.na(df_vwma[, 2]))
 # df_vwma <- df_vwma[-rm_rows, ]
 # datevec <- df_vwma$Index
