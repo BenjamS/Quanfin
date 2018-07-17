@@ -1,5 +1,5 @@
 #setwd("D:/OneDrive - CGIAR/Documents")
-source('./tsTrends.R', echo=TRUE)
+source('./getTsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 library(plyr)
 library(dplyr)
