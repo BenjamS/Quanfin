@@ -95,13 +95,13 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   }
   #Naive uptrends -- strictly follow signals
   pctRet_vec <- df_upTrends$`Pct. Change` / 100
-  out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  out <- tradeIt(invest_t0, Commission, pctRet_vec)
   NetGain_up_naive <- out[[1]] - invest_t0
   trajectory_naive <- out[[2]]
   #Shrewd uptrends -- selectively follow signals
   ind_shrewd <- which(df_upTrends$`False uptrend` == 0)
   pctRet_vec <- df_upTrends$`Pct. Change`[ind_shrewd] / 100
-  out <- tradeIt(invest_t0, Comission, pctRet_vec)
+  out <- tradeIt(invest_t0, Commission, pctRet_vec)
   NetGain_up_shrewd <- out[[1]] - invest_t0
   trajectory_shrewd <- out[[2]]
   
@@ -115,24 +115,30 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
 
 
 
-#   wind_vec <- seq(50, 400, 25)
-#   mu_vec <- c()
-#   cv_vec <- c()
-# for(w in 1:length(wind_vec))
-# {
-#   wind <- wind_vec[w]
-#   i_stop <- nrow(df) - per_ema - wind
-#   NetGain_up_naive_vec <- c()
-#   for(i in 1:i_stop){
-#     ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
-#     pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
-#     out <- tradeIt(invest_t0, Comission, pctRet_vec)
-#     NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
-#   }
-#   mu_vec[w] <- mean(NetGain_up_naive_vec)
-#   cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
-# }
-  # hist(mu_vec)
+  wind_vec <- seq(50, 200, 10)
+  mu_vec <- c()
+  cv_vec <- c()
+  per_vec <- c()
+  per_strength_vec <- c()
+for(w in 1:length(wind_vec))
+{
+  wind <- wind_vec[w]
+  i_stop <- nrow(df) - per_ema - wind
+  NetGain_up_naive_vec <- c()
+  for(i in 1:i_stop){
+    ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
+    pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
+    out <- tradeIt(invest_t0, Commission, pctRet_vec)
+    NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
+  }
+  mu_vec[w] <- mean(NetGain_up_naive_vec)
+  cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
+  p <- periodogram(NetGain_up_naive_vec)
+  per_vec[w] <- 1 / p$freq[1]
+  per_strength_vec[w] <- p$spec[1]
+  
+}
+  # hist(per_vec)
   # plot(mu_vec, cv_vec)
 
 #  library(forecast)
@@ -145,16 +151,25 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   for(i in 1:i_stop){
     ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
     pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
-    out <- tradeIt(invest_t0, Comission, pctRet_vec)
+    out <- tradeIt(invest_t0, Commission, pctRet_vec)
     net <- out[[1]] - invest_t0
     NetGain_up_naive_vec[i] <- net
     cv_naive_vec[i] <- sd(out[[2]]) / net
   }
   
-  # hist(NetGain_up_naive_vec)
-  # plot(c(1:i_stop), NetGain_up_naive_vec)
-  # trend <- EMA(NetGain_up_naive_vec, 8)
+  #library(TSA)
+  # trend <- EMA(NetGain_up_naive_vec, 3)
   # NetGain_up_naive_dt <- NetGain_up_naive_vec - trend
+  
+  #p <- periodogram(NetGain_up_naive_vec)
+  dd = data.frame(freq = p$freq, spec = p$spec)
+  order = dd[order(-dd$spec), ]
+  top2 = head(order, 2)
+  top2
+  period <- 1 / top2$freq
+  period
+  # head(NetGain_up_naive_dt)
+  # plot(c(1:i_stop), NetGain_up_naive_vec)
   #plot(c(1:i_stop), NetGain_up_naive_vec)
   #plot(c(1:i_stop), cv_naive_vec)
   #plot(cv_naive_vec, NetGain_up_naive_vec)
@@ -163,11 +178,14 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   # period <- findfrequency(cv_naive_vec)
   # print(paste("period = ", period))
   
-  df_freq <- data.frame(t = c(1:length(NetGain_up_naive_dt)), 
+  ind_peak1 <- which(NetGain_up_naive_vec[1:260] == max(NetGain_up_naive_vec[1:260]))
+  
+  df_freq <- data.frame(t = c(1:length(NetGain_up_naive_vec)), 
                         NetGain_up_naive_vec, NetGain_up_naive_dt,
                         cv_naive = cv_naive_vec)
-  gg <- ggplot(df_freq, aes(x = t, y = NetGain_up_naive_vec)) + geom_line()
-  #gg <- gg + geom_vline(xintercept = seq(1, nrow(df_freq), period), color = "green")
+  gg <- ggplot(df_freq, aes(x = t, y = cv_naive_vec)) + geom_line()
+  gg <- gg + geom_vline(xintercept = seq(ind_peak1[1], nrow(df_freq), period[1]), color = "green")
+  gg <- gg + geom_vline(xintercept = seq(ind_peak1[1], nrow(df_freq), period[2]), color = "blue")
   print(gg)
   gg <- ggplot(df_freq, aes(x = NetGain_up_naive_vec)) + geom_histogram()
   print(gg)
