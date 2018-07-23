@@ -87,11 +87,11 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   #==================================
   #Trading simulator
   tradeIt <- function(invest_t0, Commission, pctRet_vec){
-      gains <- invest_t0
-      gains_vec <- c()
-      for(i in 1:length(pctRet_vec)){gains <- gains + (gains - Commission) * pctRet_vec[i] - Commission
-      gains_vec[i] <- gains}
-      return(list(gains, gains_vec))
+    gains <- invest_t0
+    gains_vec <- c()
+    for(i in 1:length(pctRet_vec)){gains <- gains + (gains - Commission) * pctRet_vec[i] - Commission
+    gains_vec[i] <- gains}
+    return(list(gains, gains_vec))
   }
   #Naive uptrends -- strictly follow signals
   pctRet_vec <- df_upTrends$`Pct. Change` / 100
@@ -112,36 +112,36 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   df_trade$Investment_shrewd[which(df$Date %in% df_upTrends$UpStopDate[ind_shrewd])] <- trajectory_shrewd
   df_trade$Year <- year(df_trade$Date)
   df_trade_up <- df_trade
-
-
-
+  
+  
+  
   wind_vec <- seq(50, 200, 10)
   mu_vec <- c()
   cv_vec <- c()
   per_vec <- c()
   per_strength_vec <- c()
-for(w in 1:length(wind_vec))
-{
-  wind <- wind_vec[w]
-  i_stop <- nrow(df) - per_ema - wind
-  NetGain_up_naive_vec <- c()
-  for(i in 1:i_stop){
-    ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
-    pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
-    out <- tradeIt(invest_t0, Commission, pctRet_vec)
-    NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
+  for(w in 1:length(wind_vec))
+  {
+    wind <- wind_vec[w]
+    i_stop <- nrow(df) - per_ema - wind
+    NetGain_up_naive_vec <- c()
+    for(i in 1:i_stop){
+      ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
+      pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
+      out <- tradeIt(invest_t0, Commission, pctRet_vec)
+      NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
+    }
+    mu_vec[w] <- mean(NetGain_up_naive_vec)
+    cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
+    p <- periodogram(NetGain_up_naive_vec)
+    per_vec[w] <- 1 / p$freq[1]
+    per_strength_vec[w] <- p$spec[1]
+    
   }
-  mu_vec[w] <- mean(NetGain_up_naive_vec)
-  cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
-  p <- periodogram(NetGain_up_naive_vec)
-  per_vec[w] <- 1 / p$freq[1]
-  per_strength_vec[w] <- p$spec[1]
-  
-}
   # hist(per_vec)
   # plot(mu_vec, cv_vec)
-
-#  library(forecast)
+  
+  #  library(forecast)
   
   #closer look
   wind <- 110
@@ -157,38 +157,20 @@ for(w in 1:length(wind_vec))
     cv_naive_vec[i] <- sd(out[[2]]) / net
   }
   
-  #library(TSA)
-  # trend <- EMA(NetGain_up_naive_vec, 3)
-  # NetGain_up_naive_dt <- NetGain_up_naive_vec - trend
+
+  ts <- scale(NetGain_up_naive_vec)
+  t <- c(1:i_stop)
+  wavefit <- fitWave(ts, t, t_proj = NA, n_max_periods = 2, 
+                     pval_thresh = 0.001, quietly = F)
   
-  #p <- periodogram(NetGain_up_naive_vec)
-  dd = data.frame(freq = p$freq, spec = p$spec)
-  order = dd[order(-dd$spec), ]
-  top2 = head(order, 2)
-  top2
-  period <- 1 / top2$freq
-  period
-  # head(NetGain_up_naive_dt)
-  # plot(c(1:i_stop), NetGain_up_naive_vec)
-  #plot(c(1:i_stop), NetGain_up_naive_vec)
-  #plot(c(1:i_stop), cv_naive_vec)
-  #plot(cv_naive_vec, NetGain_up_naive_vec)
-  # period <- findfrequency(NetGain_up_naive_vec)
-  # print(paste("period = ", period))
-  # period <- findfrequency(cv_naive_vec)
-  # print(paste("period = ", period))
-  
-  ind_peak1 <- which(NetGain_up_naive_vec[1:260] == max(NetGain_up_naive_vec[1:260]))
-  
-  df_freq <- data.frame(t = c(1:length(NetGain_up_naive_vec)), 
-                        NetGain_up_naive_vec, NetGain_up_naive_dt,
-                        cv_naive = cv_naive_vec)
-  gg <- ggplot(df_freq, aes(x = t, y = cv_naive_vec)) + geom_line()
-  gg <- gg + geom_vline(xintercept = seq(ind_peak1[1], nrow(df_freq), period[1]), color = "green")
-  gg <- gg + geom_vline(xintercept = seq(ind_peak1[1], nrow(df_freq), period[2]), color = "blue")
+  df_plot <- data.frame(t, ts, wavefit)
+  df_plot <- df_plot %>% gather(Type, Value, ts:wavefit)
+  gg <- ggplot(df_plot, aes(x = t, y = Value, color = Type, group = Type)) +
+    geom_line()
   print(gg)
-  gg <- ggplot(df_freq, aes(x = NetGain_up_naive_vec)) + geom_histogram()
-  print(gg)
+  
+  
+  
   # df_upTrends$Year <- year(df_upTrends$UpStartDate)
   # years_covered <- unique(df_upTrends$Year)
   # n_yrs <- length(years_covered)
@@ -221,7 +203,7 @@ for(w in 1:length(wind_vec))
   # df_plot <- df
   # df_plot$Year <- year(df$Date)
   # df_plot$
-
+  
   
   if(quietly == F){
     #===================================================
@@ -235,12 +217,12 @@ for(w in 1:length(wind_vec))
     gathercols <- colnames(df)[2:ncol(df)]
     df_plot1 <- gather_(df, "Type", "Value", gathercols)
     df_plot1$zero <- 0
-
+    
     gg <- ggplot()
     gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = Value, color = Type))
     gg <- gg + theme(legend.position = "none")
     gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
-                             ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+                                                 ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
     gg <- gg + scale_fill_manual(values = c("green", "violet"))
     gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x=element_blank(),
@@ -386,8 +368,8 @@ for(w in 1:length(wind_vec))
     
   }
   #NetGain_up_shrewd
-
-    
+  
+  
   n_trades_up_naive <- nrow(df_upTrends)
   u <- df_upTrends$`False uptrend`
   n_trades_up_shrewd <- nrow(df_upTrends[which(u == 0), ])
@@ -396,31 +378,31 @@ for(w in 1:length(wind_vec))
   return(outvec)
   
 }  
-    
-    
-    
-    
-    
-    
- 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #     
 #     
 #     
