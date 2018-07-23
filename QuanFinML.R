@@ -1,6 +1,7 @@
 #setwd("D:/OneDrive - CGIAR/Documents")
 source('./getTsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
+source('./tradeSim.R', echo=TRUE)
 library(plyr)
 library(dplyr)
 library(tidyr)
@@ -40,6 +41,56 @@ table(o)
 #---------------
 n_ts <- ncol(xts_cp_mat)
 #---------------
+
+df_cp_mat <- fortify(xts_cp_mat)
+colnames(df_cp_mat)[1] <- "Date"
+df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
+df_zcp_mat$Date <- as.character(df_cp_mat$Date)
+df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
+df_ts <- df_zcp_mat[-c(1:1500),]
+#--
+GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo_raw$X <- NULL
+colnames(GroupInfo_raw)[1] <- "name"
+kept_items <- colnames(df_ts)[2:ncol(df_ts)]
+ind_keep <- which(GroupInfo_raw$name %in% kept_items)
+df_group <- GroupInfo_raw[ind_keep, c("name", "Sub.type")]
+#--
+date_vec <- df_ts$Date
+df_ts$Date <- NULL
+mat_diff <- diff(as.matrix(df_ts))
+date_vec <- date_vec[-1]
+out_cm <- collectiveModes(mat_diff, date_vec, df_group,
+                          Contrib_as_ModeSq = F,
+                          AggregateContributions = F)
+nrow(mat_diff) / ncol(mat_diff)
+
+
+
+
+
+in_ts <- xts_cp_mat[, "NIB"]
+out <- tradeSim(in_ts, 
+                per_ema = 3, 
+                per_slope = 3,
+                thresh_pct_uptrend = 1.5,
+                thresh_pct_dntrend = -1.5,
+                Commission = 7,
+                invest_t0 = 500,
+                quietly = F)
+
+cat("This ts: ", colnames(in_ts), "\n",
+    "NetGain_up_naive: ", out[1], "\n",
+    "NetGain_up_shrewd: ", out[2]
+)
+
+
+
+
+
+
+
+
 # #Grid search for best per_ema + per_slope combo
 # in_ts <- xts_cp_mat[, "WTI"]
 # per_ema_vec <- c(3, 5, 8, 13, 21, 34, 55, 89, 144)
