@@ -1,3 +1,4 @@
+setwd('D:/OneDrive - CGIAR/Documents')
 #devtools::install_github("jessevent/crypto")
 library(plyr)
 library(dplyr)
@@ -14,8 +15,9 @@ library(lubridate)
 library(forecast)
 library(stats)
 library(crypto)
-
-df_raw <- getCoins()
+source('./collectiveModes.R')
+#--------------------------------
+df_raw <- crypto_history() #getCoins()
 class(df_raw$date)
 symbvec <- unique(df_raw$symbol)
 namevec <- unique(df_raw$name)
@@ -26,7 +28,7 @@ n_names <- length(namevec)
 # df_raw_top <- subset(df_raw, name %in% names_top)
 # df_cp <- df_raw_top[, c("date", "name", "close")]
 # df_vol <- df_raw_top[, c("date", "name", "volume")]
-
+#--------------------------------
 start_dates <- c()
 for(i in 1:n_names)
 {
@@ -39,17 +41,61 @@ for(i in 1:n_names)
 # as.Date(start_dates[1:3])
 # as.numeric(start_dates[1:3]) < 16000
 # sum(start_dates <= 15900)
-cut_off_date <- as.Date("2014-01-01")
+cut_off_date <- as.Date("2017-01-01")
 ind_keep <- which(as.Date(start_dates) < cut_off_date)
 keep_these <- namevec[ind_keep]
 #n_names <- length(keep_these)
 #as.Date(start_dates[ind_keep])
-
 df_subset <- subset(df_raw, name %in% keep_these)
-df_subset <- df_subset[, c("date", "name", "close")]
+df_subset <- df_subset[which(df_subset$date > cut_off_date), c("date", "name", "close")]
 namevec <- unique(df_subset$name)
 n_names <- length(namevec)
-#------
+#--------------------------------
+df_ts <- df_subset %>% spread(name, close)
+date_vec <- df_ts$date
+df_ts$date <- NULL
+xts_ts <- xts(df_ts, date_vec)
+o <- apply(xts_ts, 2, function(x) length(which(is.na(x))))
+table(o)
+rmcols <- which(o > 2)
+colnames(xts_ts)[rmcols]
+xts_cp_mat <- xts_cp_mat[, -rmcols]
+#xts_vol_mat <- xts_vol_mat[, -rmcols]
+o <- apply(xts_ts, 1, function(x) length(which(is.na(x))))
+table(o)
+xts_ts <- na.spline(xts_ts)
+#xts_vol_mat <- na.spline(xts_vol_mat)
+o <- apply(xts_ts, 1, function(x) length(which(is.na(x))))
+table(o)
+#--------------------------------
+n_ts <- ncol(xts_ts)
+#--------------------------------
+datevec <- index(xts_ts)
+mat_diff <- diff(scale(xts_ts))
+mat_diff <- mat_diff[-1, ]
+date_vec <- date_vec[-1]
+out_collModes <- collectiveModes(mat_diff, datevec, df_group = NULL,
+                                 Contrib_as_ModeSq = F,
+                                 AggregateContributions = F)
+#--------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #If you have to remove duplicates use this:
 # df_list <- list()
 # for(i in 1:n_names)
