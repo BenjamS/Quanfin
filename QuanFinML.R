@@ -2,6 +2,7 @@
 source('./getTsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 source('./tradeSim.R', echo=TRUE)
+source('./collectiveModes.R', echo=TRUE)
 library(plyr)
 library(dplyr)
 library(tidyr)
@@ -47,7 +48,7 @@ colnames(df_cp_mat)[1] <- "Date"
 df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
 df_zcp_mat$Date <- as.character(df_cp_mat$Date)
 df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
-df_ts <- df_zcp_mat[-c(1:1500),]
+df_ts <- df_zcp_mat[-c(1:500),]
 #--
 GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
 GroupInfo_raw$X <- NULL
@@ -60,10 +61,11 @@ date_vec <- df_ts$Date
 df_ts$Date <- NULL
 mat_diff <- diff(as.matrix(df_ts))
 date_vec <- date_vec[-1]
+nrow(mat_diff) / ncol(mat_diff)
 out_cm <- collectiveModes(mat_diff, date_vec, df_group,
                           Contrib_as_ModeSq = F,
-                          AggregateContributions = F)
-nrow(mat_diff) / ncol(mat_diff)
+                          AggregateContributions = F,
+                          plot_eigenportfolios = F)
 
 
 
