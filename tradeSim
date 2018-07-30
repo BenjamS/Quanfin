@@ -112,14 +112,15 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   df_trade$Investment_shrewd[which(df$Date %in% df_upTrends$UpStopDate[ind_shrewd])] <- trajectory_shrewd
   df_trade$Year <- year(df_trade$Date)
   df_trade_up <- df_trade
-  
-  
-  
-  wind_vec <- seq(50, 200, 10)
+  #-Rolling trade sim
+  # See how dependent good trading runs are on when exactly you enter
+  # Find the trade run window with most marked periodicity
+  # (search between window of 50 and 300)
+  wind_vec <- seq(50, 300, 5)
   mu_vec <- c()
   cv_vec <- c()
-  per_vec <- c()
-  per_strength_vec <- c()
+  nper_vec <- c()
+  pwr_vec <- c()
   for(w in 1:length(wind_vec))
   {
     wind <- wind_vec[w]
@@ -131,23 +132,35 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
       out <- tradeIt(invest_t0, Commission, pctRet_vec)
       NetGain_up_naive_vec[i] <- out[[1]] - invest_t0
     }
-    mu_vec[w] <- mean(NetGain_up_naive_vec)
-    cv_vec[w] <- sd(NetGain_up_naive_vec) / mu_vec
-    p <- periodogram(NetGain_up_naive_vec)
-    per_vec[w] <- 1 / p$freq[1]
-    per_strength_vec[w] <- p$spec[1]
-    
+    mu <- mean(NetGain_up_naive_vec)
+    mu_vec[w] <- mu
+    cv_vec[w] <- sd(NetGain_up_naive_vec) / mu
+    i_stop <- nrow(df) - per_ema - wind
+    ts <- scale(NetGain_up_naive_vec)
+    t <- c(1:i_stop)
+    outlist <- fitWave(ts, t, t_proj = NULL, q_prob = 0.99, 
+                       pval_thresh = 0.001, nper_fit = NULL, quietly = F)
+    nper_vec[w] <- outlist[[3]]
+    df_per <- outlist[[2]]
+    pwr_vec[w] <- mean(df_per$spectrum)
   }
-  # hist(per_vec)
+  # hist(pwr_vec)
+  # hist(nper_vec)
+  # plot(pwr_vec, cv_vec)
+  # plot(pwr_vec, nper_vec)
   # plot(mu_vec, cv_vec)
+  # plot(wind_vec, pwr_vec)
   
-  #  library(forecast)
   
   #closer look
-  wind <- 110
+  pwr_vec[which(is.na(pwr_vec))] <- 0
+  wind <- wind_vec[which(pwr_vec == max(pwr_vec))]
+  #wind <- wind_vec[which(nper_vec == min(nper_vec))]
+  maxPwr_tradeRun_length <- wind
   i_stop <- nrow(df) - per_ema - wind
   NetGain_up_naive_vec <- c()
   cv_naive_vec <- c()
+  n_trades <- c()
   for(i in 1:i_stop){
     ind <- which(df_upTrends$UpStopDate %in% df$Date[i:(i + wind - 1)])
     pctRet_vec <- df_upTrends$`Pct. Change`[ind] / 100
@@ -155,19 +168,44 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
     net <- out[[1]] - invest_t0
     NetGain_up_naive_vec[i] <- net
     cv_naive_vec[i] <- sd(out[[2]]) / net
+    n_trades[i] <- length(ind)
   }
   
-
-  ts <- scale(NetGain_up_naive_vec)
+  # hist(n_trades)
+  avg_Ntrades_per_maxPwrRun <- mean(n_trades)
+    
+  ts <- (NetGain_up_naive_vec)
   t <- c(1:i_stop)
-  wavefit <- fitWave(ts, t, t_proj = NA, n_max_periods = 2, 
-                     pval_thresh = 0.001, quietly = F)
+  t_proj = c(1:wind)
+  outlist <- fitWave(ts, t, t_proj, q_prob = 0.99, 
+                     pval_thresh = 0.001, nper_fit = 2, quietly = F)
+  wavefit <- outlist[[1]]
+  df_per <- outlist[[2]]
+  n_pers_fitted <- outlist[[3]]
+  ts_proj <- outlist[[4]]
+  t_future <- length(ts) + t_proj
+  wavefit_proj <- c(rep(NA, length(ts)), ts_proj)
+  t <- c(t, t_future)
+  ts <- c(ts, rep(NA, length(t_future)))
+  wavefit <- c(wavefit, rep(NA, length(t_future)))
   
-  df_plot <- data.frame(t, ts, wavefit)
-  df_plot <- df_plot %>% gather(Type, Value, ts:wavefit)
-  gg <- ggplot(df_plot, aes(x = t, y = Value, color = Type, group = Type)) +
-    geom_line()
-  print(gg)
+
+  
+  
+  
+  
+  #  library(WaveletComp)
+  # df_this_ts <- data.frame(x = ts)
+  # my.w <- analyze.wavelet(df_this_ts, "x",
+  #                         loess.span = 0,
+  #                         dt = 1, dj = 1/250,
+  #                         lowerPeriod = 2^3,
+  #                         upperPeriod = 2^9,
+  #                         make.pval = TRUE, n.sim = 10)
+  # wt.image(my.w, color.key = "quantile", n.levels = 250,
+  #          legend.params = list(lab = "wavelet power levels", mar = 4.7))
+  # my.rec <- reconstruct(my.w)
+  # x.rec <- my.rec$series$x.r  # x: name of original series
   
   
   
@@ -272,6 +310,17 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
     gg_Up <- ggarrange(gg_Up1, gg_Up2, gg_Up3, ncol = 1, nrow = 3, align = "v")
     print(gg_Up)
     #=====================================
+    # (Uptrend) Trade runs plot
+    date_vec <- df$Date[-c(1:per_ema)]
+    df_tradeRuns <- data.frame(Date = date_vec, t, ts, wavefit, wavefit_proj)
+    df_tradeRuns <- df_tradeRuns %>% gather(Type, Value, ts:wavefit_proj)
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_tradeRuns, aes(x = Date, y = Value, color = Type, group = Type))
+    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                                 ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    print(gg)
+    
     #=====================================
     # year_vec <- unique(year(df$Date))
     # n_yrs <- length(year_vec)
@@ -314,8 +363,8 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
     # ggUp_yearly <- ggarrange(qq, ncol = 1, nrow = n_yrs,align = "v")
     # print(ggUp_yearly)
     
-    ggUp_by_year[[n_yrs]]
-    gg_Up2 <- gg
+    # ggUp_by_year[[n_yrs]]
+    # gg_Up2 <- gg
     
     #=====================================
     #=====================================
@@ -373,8 +422,12 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   n_trades_up_naive <- nrow(df_upTrends)
   u <- df_upTrends$`False uptrend`
   n_trades_up_shrewd <- nrow(df_upTrends[which(u == 0), ])
-  outvec <- c(NetGain_up_naive, NetGain_up_shrewd, 
-              n_trades_up_naive, n_trades_up_shrewd)
+  df_out <- data.frame(NetGain_up_naive, NetGain_up_shrewd, 
+              n_trades_up_naive, n_trades_up_shrewd,
+              maxPwr_tradeRun_length,
+              avg_Ntrades_per_maxPwrRun,
+              n_pers_fitted)
+  print(df_out)
   return(outvec)
   
 }  
