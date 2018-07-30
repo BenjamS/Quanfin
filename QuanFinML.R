@@ -42,14 +42,46 @@ table(o)
 #---------------
 n_ts <- ncol(xts_cp_mat)
 #---------------
+this_ts_name <- "SPY"
+in_ts <- xts_cp_mat[, this_ts_name]
+tradeSim(in_ts, per_ema = 3, per_slope = 3,
+                     thresh_pct_uptrend = 1.5,
+                     thresh_pct_dntrend = -1.5,
+                     Commission = 7,
+                     invest_t0 = 500,
+                     quietly = F)
+  
+
+library(WaveletComp)
+source('./getSlope.R', echo=TRUE)
+
 
 df_cp_mat <- fortify(xts_cp_mat)
 colnames(df_cp_mat)[1] <- "Date"
 df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
 df_zcp_mat$Date <- as.character(df_cp_mat$Date)
 df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
-df_ts <- df_zcp_mat[-c(1:500),]
-#--
+#df_ts <- df_zcp_mat[-c(1:500),]
+#---------------
+this_ts_name <- "NIB"
+in_ts <- xts_cp_mat[, this_ts_name]
+slope_per = 55
+per_ema = 34
+ts <- getSlope(in_ts, slope_per, per_ema, Programatic = T)
+plot(ts)
+  #diff(as.matrix(df_ts[, this_ts_name]))
+df_this_ts <- data.frame(x = ts[-c(1:(slope_per + per_ema))])
+my.w <- analyze.wavelet(df_this_ts, "x",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+my.rec <- reconstruct(my.w)
+x.rec <- my.rec$series$x.r  # x: name of original series
+#---------------
 GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
 GroupInfo_raw$X <- NULL
 colnames(GroupInfo_raw)[1] <- "name"
