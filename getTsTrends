@@ -92,6 +92,6 @@ getTsTrends <- function(in_ts, slope_window = 5, quietly = T)
   if(sum(ind_dnFin - ind_dnBeg < 0) > 0){print("Problem with downtrends")}
  #=================================
   outlist_trend_inds <- list(ind_upBeg, ind_upFin,
-                  ind_dnBeg, ind_dnFin)
+                  ind_dnBeg, ind_dnFin, dydx_mu, ldydx_cv)
   return(outlist_trend_inds)
 }
