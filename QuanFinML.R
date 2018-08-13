@@ -42,7 +42,7 @@ table(o)
 #---------------
 n_ts <- ncol(xts_cp_mat)
 #---------------
-this_ts_name <- "SPY"
+this_ts_name <- "NIB"
 in_ts <- xts_cp_mat[, this_ts_name]
 tradeSim(in_ts, per_ema = 3, per_slope = 3,
                      thresh_pct_uptrend = 1.5,
