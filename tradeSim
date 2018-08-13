@@ -41,6 +41,9 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
   ind_upFin <- outlist[[2]]
   ind_dnBeg <- outlist[[3]]
   ind_dnFin <- outlist[[4]]
+  dydt_mu <- outlist[[5]]
+  dydt_cv <- outlist[[6]]
+  df_slope <- data.frame(Date = df$Date, slope = c(rep(NA, per_ema + per_slope), dydt_mu), slope_volatility = c(rep(NA, per_ema + per_slope), dydt_cv))
   #----------------------
   #Get value of trend increase/decrease (as magnitude and percentage)
   #and trend durations
@@ -192,6 +195,64 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
 
   
   
+  #======
+  df_x <- df_upTrends
+  df_x$Month <- months(df_x$UpStartDate)
+  df_x$`True uptrend` <- ifelse(df_x$`False uptrend` == 0, 1, 0)
+  df_xALL <- df_x %>% group_by(Month) %>% 
+    summarise(n_true = sum(`True uptrend`),
+              n_false = sum(`False uptrend`),
+              mu_pctChng = mean(`Pct. Change`),
+              sum_Chng = sum(Change),
+              mu_duration = mean(Duration),
+              cv_pctChng =  abs(sd(`Pct. Change`) / mean(`Pct. Change`)))
+  
+  df_xALL <- df_xALL %>% gather(Stat, Value, mu_pctChng:cv_pctChng)
+  
+  df_plot <- subset(df_xALL, Stat != "sum_Chng")
+  df_plot$Month = factor(df_plot$Month, levels = month.name)
+  gg <- ggplot(data = df_plot, aes(x = Month, y = Value, fill = Stat))
+  gg <- gg + geom_bar(stat = "identity", aes(fill = Stat),
+                      position = position_dodge(width = 0.6))
+  gg <- gg + theme_minimal()
+  gg <- gg + theme(axis.title.x = element_blank(), axis.title.y = element_blank(),
+                   axis.text.x = element_text(angle = 60, size = 9, vjust = 0.8),
+                   panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  gg
+  
+    
+  df_xTRUE <- subset(df_upTrends, `False uptrend` == 0)
+  df_xTRUE$Month <- months(df_xTRUE$UpStartDate)
+  df_xTRUE$`True uptrend` <- ifelse(df_xTRUE$`False uptrend` == 0, 1, 0)
+  df_xTRUE <- df_xTRUE %>% group_by(Month) %>% 
+    summarise(n_true = sum(`True uptrend`),
+              n_false = sum(`False uptrend`),
+              mu_pctChng = mean(`Pct. Change`),
+              sum_Chng = sum(Change),
+              mu_duration = mean(Duration),
+              cv_pctChng =  abs(sd(`Pct. Change`) / mean(`Pct. Change`)))
+  
+  df_xTRUE <- df_xTRUE %>% gather(Stat, Value, mu_pctChng:cv_pctChng)
+  
+  df_plot <- subset(df_xTRUE, Stat != "sum_Chng")
+  df_plot$Month = factor(df_plot$Month, levels = month.name)
+  gg <- ggplot(data = df_plot, aes(x = Month, y = Value, fill = Stat))
+  gg <- gg + geom_bar(stat = "identity", aes(fill = Stat),
+                      position = position_dodge(width = 0.6))
+  gg <- gg + theme_minimal()
+  gg <- gg + theme(axis.title.x = element_blank(), axis.title.y = element_blank(),
+                   axis.text.x = element_text(angle = 60, size = 9, vjust = 0.8),
+                   panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  gg
+  
+  
+
+  #======
+  
+  
+  
+  
+  
   
   
   #  library(WaveletComp)
@@ -268,24 +329,40 @@ tradeSim <- function(in_ts, per_ema = 3, per_slope = 3,
                      legend.position = "none")
     gg_Up1 <- gg
     #----
-    # 1b) Plot trade simulation
-    df_trade_plot <- df_trade_up
-    df_trade_plot$ts <- NULL
-    df_trade_plot$ts_ema <- NULL
-    colnames(df_trade_plot)[2:3] <- c("Naive", "Shrewd")
-    gathercols <- colnames(df_trade_plot)[2:3]
-    df_trade_plot <- gather_(df_trade_plot, "Type", "Invest. Traject.", gathercols)
-    df_upTrends_plot <- df_upTrends
+    #1b) Look for periodicity in false uptrends
+    gathercols <- colnames(df_slope)[2:ncol(df_slope)]
+    df_plot2 <- gather_(df_slope, "Type", "Value", gathercols)
     gg <- ggplot()
-    gg <- gg + geom_point(data = df_trade_plot, aes(x = Date, y = `Invest. Traject.`, color = Type))
-    gg <- gg + geom_rect(data = df_upTrends_plot, aes(xmin = UpStartDate, xmax = UpStopDate,
-                                                      ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    gg <- gg + geom_line(data = df_plot2, aes(x = Date, y = Value))
+    gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free")
+    #gg <- gg + theme(legend.position = "none")
+    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                                 ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
     gg <- gg + scale_fill_manual(values = c("green", "violet"))
-    gg <- gg + theme(legend.position = "none",
-                     axis.title.x = element_blank(),
+    gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x=element_blank(),
-                     axis.ticks.x=element_blank())
+                     axis.ticks.x=element_blank(),
+                     legend.position = "none")
     gg_Up2 <- gg
+    
+    # 1b) Plot trade simulation
+    # df_trade_plot <- df_trade_up
+    # df_trade_plot$ts <- NULL
+    # df_trade_plot$ts_ema <- NULL
+    # colnames(df_trade_plot)[2:3] <- c("Naive", "Shrewd")
+    # gathercols <- colnames(df_trade_plot)[2:3]
+    # df_trade_plot <- gather_(df_trade_plot, "Type", "Invest. Traject.", gathercols)
+    # df_upTrends_plot <- df_upTrends
+    # gg <- ggplot()
+    # gg <- gg + geom_point(data = df_trade_plot, aes(x = Date, y = `Invest. Traject.`, color = Type))
+    # gg <- gg + geom_rect(data = df_upTrends_plot, aes(xmin = UpStartDate, xmax = UpStopDate,
+    #                                                   ymin = -Inf, ymax = Inf, fill = factor(`False uptrend`)), alpha = 0.3)
+    # gg <- gg + scale_fill_manual(values = c("green", "violet"))
+    # gg <- gg + theme(legend.position = "none",
+    #                  axis.title.x = element_blank(),
+    #                  axis.text.x=element_blank(),
+    #                  axis.ticks.x=element_blank())
+    # gg_Up2 <- gg
     #----
     # 1c) Plot bars indicating pct. changes of each trade event.
     df_upTrends$ymin <- NA
