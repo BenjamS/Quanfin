@@ -1,4 +1,4 @@
-#setwd("D:/OneDrive - CGIAR/Documents")
+setwd("D:/OneDrive - CGIAR/Documents")
 source('./getTsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 source('./tradeSim.R', echo=TRUE)
@@ -19,7 +19,7 @@ library(xgboost)
 library(caret)
 library(scales)
 
-fromdate<-"2012-01-01"; todate <- "2018-07-10"
+fromdate<-"2012-01-01"; todate <- "2018-08-10"
 getGlobTrnds(fromdate, todate)
 rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD", "MIDD"))
 xts_cp_mat <- cpgtetfmat[, -rmcol]
@@ -41,46 +41,104 @@ o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
 table(o)
 #---------------
 n_ts <- ncol(xts_cp_mat)
+in_ts <- xts_cp_mat[, "NIB"]
 #---------------
+per_ema = 3
+per_slope = 3
+thresh_pct_uptrend = 1.5
+thresh_pct_dntrend = -1.5
+quietly = T
+outlist <- getTsTrends_wSlopeInfo(in_ts, per_ema = 3, per_slope = 3,
+                              thresh_pct_uptrend = 1.5,
+                              thresh_pct_dntrend = -1.5,
+                              quietly = T)
+
+df_upTrends <- outlist[[1]]
+df_upTrends$tsEMAdiff <- df_upTrends$`Start ts` - df_upTrends$`Start ts_ema`
+keep_cols <- c("UpStartDate", "tsEMAdiff", "Start slope", "Start slope_volatility", "False uptrend")
+df_upTrends <- df_upTrends[, keep_cols]
+
+nrow(df_upTrends)
+
+these_dates <- df_upTrends$UpStartDate
+
+
+xx <- apply( getSlope)
+for(i in 1:n_ts){}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 this_ts_name <- "NIB"
 in_ts <- xts_cp_mat[, this_ts_name]
 tradeSim(in_ts, per_ema = 3, per_slope = 3,
-                     thresh_pct_uptrend = 1.5,
-                     thresh_pct_dntrend = -1.5,
-                     Commission = 7,
-                     invest_t0 = 500,
-                     quietly = F)
-  
-
-library(WaveletComp)
-source('./getSlope.R', echo=TRUE)
+         thresh_pct_uptrend = 1.5,
+         thresh_pct_dntrend = -1.5,
+         Commission = 7,
+         invest_t0 = 500,
+         quietly = F)
 
 
-df_cp_mat <- fortify(xts_cp_mat)
-colnames(df_cp_mat)[1] <- "Date"
-df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
-df_zcp_mat$Date <- as.character(df_cp_mat$Date)
-df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
-#df_ts <- df_zcp_mat[-c(1:500),]
-#---------------
-this_ts_name <- "NIB"
-in_ts <- xts_cp_mat[, this_ts_name]
-slope_per = 55
-per_ema = 34
-ts <- getSlope(in_ts, slope_per, per_ema, Programatic = T)
-plot(ts)
-  #diff(as.matrix(df_ts[, this_ts_name]))
-df_this_ts <- data.frame(x = ts[-c(1:(slope_per + per_ema))])
-my.w <- analyze.wavelet(df_this_ts, "x",
-                        loess.span = 0,
-                        dt = 1, dj = 1/250,
-                        lowerPeriod = 2^3,
-                        upperPeriod = 2^9,
-                        make.pval = TRUE, n.sim = 10)
-wt.image(my.w, color.key = "quantile", n.levels = 250,
-         legend.params = list(lab = "wavelet power levels", mar = 4.7))
-my.rec <- reconstruct(my.w)
-x.rec <- my.rec$series$x.r  # x: name of original series
+# library(WaveletComp)
+# source('./getSlope.R', echo=TRUE)
+# 
+# 
+# df_cp_mat <- fortify(xts_cp_mat)
+# colnames(df_cp_mat)[1] <- "Date"
+# df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
+# df_zcp_mat$Date <- as.character(df_cp_mat$Date)
+# df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
+# #df_ts <- df_zcp_mat[-c(1:500),]
+# #---------------
+# this_ts_name <- "NIB"
+# in_ts <- xts_cp_mat[, this_ts_name]
+# slope_per = 55
+# per_ema = 34
+# ts <- getSlope(in_ts, slope_per, per_ema, Programatic = T)
+# plot(ts)
+# #diff(as.matrix(df_ts[, this_ts_name]))
+# df_this_ts <- data.frame(x = ts[-c(1:(slope_per + per_ema))])
+# my.w <- analyze.wavelet(df_this_ts, "x",
+#                         loess.span = 0,
+#                         dt = 1, dj = 1/250,
+#                         lowerPeriod = 2^3,
+#                         upperPeriod = 2^9,
+#                         make.pval = TRUE, n.sim = 10)
+# wt.image(my.w, color.key = "quantile", n.levels = 250,
+#          legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
 #---------------
 GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
 GroupInfo_raw$X <- NULL
@@ -89,6 +147,14 @@ kept_items <- colnames(df_ts)[2:ncol(df_ts)]
 ind_keep <- which(GroupInfo_raw$name %in% kept_items)
 df_group <- GroupInfo_raw[ind_keep, c("name", "Sub.type")]
 #--
+df_cp_mat <- fortify(xts_cp_mat)
+colnames(df_cp_mat)[1] <- "Date"
+df_zcp_mat <- as.data.frame(scale(df_cp_mat[, 2:ncol(df_cp_mat)]))
+df_zcp_mat$Date <- as.character(df_cp_mat$Date)
+df_zcp_mat <- df_zcp_mat[, c(ncol(df_zcp_mat), 1:(ncol(df_zcp_mat) - 1))]
+#df_ts <- df_zcp_mat[-c(1:500),]
+df_ts <- df_zcp_mat
+
 date_vec <- df_ts$Date
 df_ts$Date <- NULL
 mat_diff <- diff(as.matrix(df_ts))
@@ -98,120 +164,6 @@ out_cm <- collectiveModes(mat_diff, date_vec, df_group,
                           Contrib_as_ModeSq = F,
                           AggregateContributions = F,
                           plot_eigenportfolios = F)
-
-
-
-
-
-in_ts <- xts_cp_mat[, "NIB"]
-out <- tradeSim(in_ts, 
-                per_ema = 3, 
-                per_slope = 3,
-                thresh_pct_uptrend = 1.5,
-                thresh_pct_dntrend = -1.5,
-                Commission = 7,
-                invest_t0 = 500,
-                quietly = F)
-
-cat("This ts: ", colnames(in_ts), "\n",
-    "NetGain_up_naive: ", out[1], "\n",
-    "NetGain_up_shrewd: ", out[2]
-)
-
-
-
-
-
-
-
-
-# #Grid search for best per_ema + per_slope combo
-# in_ts <- xts_cp_mat[, "WTI"]
-# per_ema_vec <- c(3, 5, 8, 13, 21, 34, 55, 89, 144)
-# per_slope_vec <- c(3, 5, 8, 13, 21, 34, 55, 89, 144)
-# grid_naive <- matrix(NA, nrow = length(per_ema_vec), ncol = length(per_slope_vec))
-# grid_shrewd <- matrix(NA, nrow = length(per_ema_vec), ncol = length(per_slope_vec))
-# for(i in 1:length(per_ema_vec)){
-#   print(i)
-#   for(j in 1:length(per_slope_vec)){
-#     print(j)
-#     out <- tradeSim(in_ts, 
-#                        per_ema = per_ema_vec[i], 
-#                        per_slope = per_slope_vec[j],
-#                        thresh_pct_uptrend = 1.5,
-#                        thresh_pct_dntrend = -1.5,
-#                        Commission = 7,
-#                        invest_t0 = 500,
-#                        quietly = T)
-#     grid_naive[i, j] <- out[1]
-#     grid_shrewd[i, j] <- out[2]
-#     
-#   }
-# }
-# df_naive <- as.data.frame(grid_naive)
-# colnames(df_naive) <- paste("slope", per_slope_vec)
-#==============================
-# Search for ts with highest return
-NetGain_up_naive_vec <- c()
-NetGain_up_shrewd_vec <- c()
-for(i in 1:ncol(xts_cp_mat)){
-  in_ts <- xts_cp_mat[, i]
-  out <- tradeSim(in_ts, 
-                  per_ema = 3, 
-                  per_slope = 3,
-                  thresh_pct_uptrend = 1.5,
-                  thresh_pct_dntrend = -1.5,
-                  Commission = 7,
-                  invest_t0 = 500,
-                  quietly = F)
-  
-  cat("This ts: ", colnames(in_ts), "\n",
-    "NetGain_up_naive: ", out[1], "\n",
-    "NetGain_up_shrewd: ", out[2]
-    )
-  NetGain_up_naive_vec[i] <- out[1] 
-  NetGain_up_shrewd_vec[i] <- out[2]
-  
-}
-
-df_x <- data.frame(name = colnames(xts_cp_mat), 
-                   Naive.Net.Gain = NetGain_up_naive_vec,
-                   Shrewd.Net.Gain = NetGain_up_shrewd_vec)
-gg <- ggplot(df_x, aes(x = Naive.Net.Gain, y = Shrewd.Net.Gain)) + geom_point()
-gg <- gg + scale_x_log10() + scale_y_log10()
-gg <- gg + geom_text(aes(label = name))
-gg
-
-
-# Take a closer look
-in_ts <- xts_cp_mat[, "WTI"]
-out <- tradeSim(in_ts, 
-                per_ema = 3, 
-                per_slope = 3,
-                thresh_pct_uptrend = 1.5,
-                thresh_pct_dntrend = -1.5,
-                Commission = 7,
-                invest_t0 = 500,
-                quietly = F)
-
-cat("This ts: ", colnames(in_ts), "\n",
-    "Naive net gain: ", out[1], "\n",
-    "Shrewd net gain: ", out[2], "\n",
-    "Number naive trades: ", out[3] - out[4], "\n",
-    "Number shrewd trades: ", out[4], "\n",
-    "Total number of trades: ", out[3]
-)
-
-
-
-
-
-
-
-
-
-
-
 
 
 
