@@ -1,0 +1,95 @@
+getTsTrends_wSlopeInfo <- function(in_ts, per_ema = 3, per_slope = 3,
+                              thresh_pct_uptrend = 1.5,
+                              thresh_pct_dntrend = -1.5,
+                              quietly = T)
+{
+#in_ts <- xts_cp_mat[, "NIB"]
+# in_ts should be an xts object. in_ts should be the raw time series, unsmoothed.
+# in_ts will be smoothed below to an exponential moving avg with period defined
+# by per_ema. Alternatively, in_ts can be smoothed via VWMA, in which case you
+# enter in_ts as a list object containing both the price and volume series
+# like this: in_ts <- list(xts_cp, xts_vol)
+#---------------------
+#Make sure required packages are loaded
+#---------------------
+required_packages <- c("pracma", "ggplot2", "plyr", "tidyr", "quantmod", "ggpubr")
+lapply(required_packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+#----------------------
+if(class(in_ts)[1] == "list"){
+  xts_cp <- in_ts[[1]]
+  #datevec <- index(in_ts)
+  xts_vol <- in_ts[[2]]
+  xts_cp_smoothed <- VWMA(xts_cp, xts_vol)
+}else{
+  #datevec <- index(in_ts)
+  xts_cp <- in_ts
+  xts_cp_smoothed <- EMA(xts_cp, per_ema)
+}
+xts_mat <- merge(xts_cp, xts_cp_smoothed)
+df <- fortify(xts_mat)
+colnames(df) <- c("Date", "ts", "ts_ema")
+#---------------------
+outlist <- getTsTrendIndsAndSlope(xts_cp_smoothed, per_slope, per_ema, quietly)
+ind_upBeg <- outlist[[1]]
+ind_upFin <- outlist[[2]]
+ind_dnBeg <- outlist[[3]]
+ind_dnFin <- outlist[[4]]
+dydt_mu <- outlist[[5]]
+ldydt_cv <- outlist[[6]]
+slope <- c(rep(NA, per_slope), dydt_mu)
+slope_volatility = c(rep(NA, per_slope), ldydt_cv)
+df_slope <- data.frame(Date = df$Date, slope, slope_volatility)
+df <- merge(df, df_slope)
+#----------------------
+#Get value of trend increase/decrease (as magnitude and percentage)
+#and trend durations
+#Uptrends
+df_a <- df
+colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+df_a$UpStartDate <- NA
+df_a$UpStartDate[ind_upBeg] <- as.character(df_a$Date[ind_upBeg])
+df_a <- subset(df_a, is.na(UpStartDate) != T)
+df_a$Date <- NULL
+df_b <- df
+colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+df_b$UpStopDate <- NA
+df_b$UpStopDate[ind_upFin] <- as.character(df_b$Date[ind_upFin])
+df_b <- subset(df_b, is.na(UpStopDate) != T)
+df_b$Date <- NULL
+df_upTrends <- cbind(df_a, df_b)
+df_upTrends$Change <- df_upTrends$`Stop ts` - df_upTrends$`Start ts`
+df_upTrends$`Pct. Change` <- 100 * df_upTrends$Change / df_upTrends$`Start ts`
+df_upTrends$Duration <- ind_upFin - ind_upBeg
+df_upTrends$`False uptrend` <- ifelse(df_upTrends$`Pct. Change` < thresh_pct_uptrend, 1, 0)
+df_upTrends$UpStartDate <- as.Date(df_upTrends$UpStartDate)
+df_upTrends$UpStopDate <- as.Date(df_upTrends$UpStopDate)
+#----------------------
+#Downtrends
+df_a <- df
+colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+df_a$DnStartDate <- NA
+df_a$DnStartDate[ind_dnBeg] <- as.character(df_a$Date[ind_dnBeg])
+df_a <- subset(df_a, is.na(DnStartDate) != T)
+df_a$Date <- NULL
+df_b <- df
+colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+df_b$DnStopDate <- NA
+df_b$DnStopDate[ind_dnFin] <- as.character(df_b$Date[ind_dnFin])
+df_b <- subset(df_b, is.na(DnStopDate) != T)
+df_b$Date <- NULL
+df_dnTrends <- cbind(df_a, df_b)
+df_dnTrends$Change <- df_dnTrends$`Stop ts` - df_dnTrends$`Start ts`
+df_dnTrends$`Pct. Change` <- 100 * df_dnTrends$Change / df_dnTrends$`Start ts`
+df_dnTrends$Duration <- ind_dnFin - ind_dnBeg
+df_dnTrends$`False downtrend` <- ifelse(df_dnTrends$`Pct. Change` > thresh_pct_dntrend, 1, 0)
+df_dnTrends$DnStartDate <- as.Date(df_dnTrends$DnStartDate)
+df_dnTrends$DnStopDate <- as.Date(df_dnTrends$DnStopDate)
+#----------------------
+outlist <- list(df_upTrends, df_dnTrends)
+return(outlist)
+}
