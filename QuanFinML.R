@@ -1,4 +1,4 @@
-setwd("D:/OneDrive - CGIAR/Documents")
+#setwd("D:/OneDrive - CGIAR/Documents")
 source('./getTsTrends.R', echo=TRUE)
 source('./getGlobTrnds.R', echo=TRUE)
 source('./tradeSim.R', echo=TRUE)
@@ -41,30 +41,144 @@ o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
 table(o)
 #---------------
 n_ts <- ncol(xts_cp_mat)
-in_ts <- xts_cp_mat[, "NIB"]
 #---------------
+this_ts_name <- "NIB"
+#---------------
+in_ts <- xts_cp_mat[, this_ts_name]
 per_ema = 3
 per_slope = 3
 thresh_pct_uptrend = 1.5
 thresh_pct_dntrend = -1.5
 quietly = T
 outlist <- getTsTrends_wSlopeInfo(in_ts, per_ema = 3, per_slope = 3,
-                              thresh_pct_uptrend = 1.5,
-                              thresh_pct_dntrend = -1.5,
-                              quietly = T)
+                                  thresh_pct_uptrend = 1.5,
+                                  thresh_pct_dntrend = -1.5,
+                                  quietly = T)
 
 df_upTrends <- outlist[[1]]
 df_upTrends$tsEMAdiff <- df_upTrends$`Start ts` - df_upTrends$`Start ts_ema`
-keep_cols <- c("UpStartDate", "tsEMAdiff", "Start slope", "Start slope_volatility", "False uptrend")
+keep_cols <- c("False uptrend", "UpStartDate", "tsEMAdiff", "Start slope", "Start slope_volatility")
 df_upTrends <- df_upTrends[, keep_cols]
 
 nrow(df_upTrends)
 
 these_dates <- df_upTrends$UpStartDate
+df_upTrends$UpStartDate <- NULL
+colnames(df_upTrends)[1] <- "y"
 
 
-xx <- apply( getSlope)
-for(i in 1:n_ts){}
+#getSlope <- function(in_ts, slope_per = 3, per_ema = NULL, Programatic = T)
+ind_rm <- which(colnames(xts_cp_mat) == this_ts_name)
+xx <- apply(xts_cp_mat[, -ind_rm], 2, getSlope, per_slope, Programatic = T)
+nrow(xx)
+nrow(xts_cp_mat)
+df_feats <- as.data.frame(xx)
+df_feats$Date <- fortify(xts_cp_mat)$Index[-c(1:per_slope)]
+df_feats <- subset(df_feats, Date %in% these_dates)
+df_feats$Date <- NULL
+#--
+df_in <- cbind(df_upTrends, df_feats)
+featNames <- colnames(df_in)[-1]
+yName <- colnames(df_in)[1]
+df_in$y <- as.factor(df_in$y)
+#====================================
+set.seed(1234)
+splitIndex <- createDataPartition(df_in[, yName], p = .75, list = FALSE, times = 1)
+df_train <- df_in[ splitIndex,]
+df_test <- df_in[-splitIndex,]
+
+trainDat_pctot <- .65
+indtrain_beg <- 1
+indtrain_end <- round(nrow(df_in) * trainDat_pctot)
+indtest_beg <- indtrain_end + 1
+indtest_end <- nrow(df_in)
+train_rows <- indtrain_beg:indtrain_end
+test_rows <- indtest_beg:indtest_end
+df_train <- df_in[train_rows, ]
+df_test <- df_in[test_rows, ]
+
+
+nrow(df_in)
+nrow(df_train)
+nrow(df_test)
+#nrow(df_valid)
+#this_method <- "glmnet"
+#this_method <- "glm"
+#this_method <- "nb"
+#this_method <- "gbm" #good
+#this_method <- "xgbLinear"
+this_method <- "xgbTree" #better
+#this_method <- "naive_bayes"
+#this_method <- "svmRadial"
+#this_method <- "cforest"
+#this_method <- "rf"
+
+# gbmGrid <-  expand.grid(n.trees = 50, interaction.depth =  c(1, 5, 9),
+#                         shrinkage = 0.01, n.minobsinnode = )
+# run model
+# head(trainDF[,predictorsNames])
+# head(trainDF[,outcomeName])
+# head(trainDF)
+# params <- list(booster = "gbtree", objective = "multi:softmax", eta = 0.1,
+#                gamma = 0, max_depth = 25, min_child_weight = 1, subsample = 0.5,
+#                colsample_bytree = 0.5, num_class = 5)
+#=============================
+#modelLookup(this_method)
+#=============================
+#number = 5 is better (and slower)
+objControl <- trainControl(method = 'repeatedcv', number = 5)#, repeats = 3)
+# objControl <- trainControl(
+#   method = "repeatedcv",
+#   number = 5,
+#   repeats = 2,
+#   returnData = FALSE,
+#   classProbs = TRUE,
+#   summaryFunction = multiClassSummary
+# )
+
+# df_train$y <- as.factor(make.names(as.character(df_train$y)))
+# class(df_train$y)
+# df_test$y <- as.factor(make.names(as.character(df_test$y)))
+
+# tune_grid <- expand.grid(nrounds=c(25, 40, 60),
+#                         max_depth = c(25),
+#                         eta = c(0.05, 0.1, 0.3),
+#                         gamma = c(0),
+#                         colsample_bytree = c(0.5, 0.75),
+#                         subsample = c(0.50),
+#                         min_child_weight = c(0))
+
+objModel <- train(df_train[, featNames], df_train[, yName],
+                  method = this_method,
+                  trControl = objControl)
+#-----------------------------
+var_importance <- varImp(objModel, scale = T)
+print(var_importance)
+#plot(var_importance)
+#-----------------------------
+#Predict using fitted model
+# probabilities ("prob") or integer ("raw")
+predictions <- predict(object = objModel, df_test[, featNames], type = 'raw') #type='prob')
+print(postResample(pred = predictions, obs = as.factor(df_test[, yName])))
+#head(predictions)
+#df_plot <- rownames(df_test)
+#----------------------------
+#Confusion matrix
+x <- confusionMatrix(predictions, df_test[, yName])
+confmat <- x$table
+confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
+confmat <- as.table(confmat)
+colnames(confmat) <- rownames(confmat)
+names(dimnames(confmat))[2] <- "Reference"
+print(confmat)
+print(x$table)
+class(confmat)
+df_plot <- as.data.frame(confmat)
+gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
+gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
+gg
+
+
 
 
 
@@ -407,113 +521,6 @@ ind <- which(df_mod$y %in% c("Uptrend False Start", "Uptrend False Stop"))
 df_mod$y[ind] <- "Hold"
 df_mod$y <- as.factor(df_mod$y)
 unique(df_mod$y)
-fitDat_pctot <- .95
-indfit_beg <- 1
-indfit_end <- round(nrow(df_mod) * fitDat_pctot)
-indvalid_beg <- indfit_end + 1
-indvalid_end <- nrow(df_mod)
-fit_rows <- indfit_beg:indfit_end
-valid_rows <- indvalid_beg:indvalid_end
-df_fit <- df_mod[fit_rows, ]
-df_valid <- df_mod[valid_rows, ]
-#====================================
-
-
-# set.seed(1234)
-# splitIndex <- createDataPartition(df_fit[, outcomeName], p = .5, list = FALSE, times = 1)
-# df_train <- df_fit[ splitIndex,]
-# df_test <- df_fit[-splitIndex,]
-
-trainDat_pctot <- .5
-indtrain_beg <- 1
-indtrain_end <- round(nrow(df_mod) * trainDat_pctot)
-indtest_beg <- indtrain_end + 1
-indtest_end <- nrow(df_mod)
-train_rows <- indtrain_beg:indtrain_end
-test_rows <- indtest_beg:indtest_end
-df_train <- df_mod[train_rows, ]
-df_test <- df_mod[test_rows, ]
-
-
-nrow(df_mod)
-nrow(df_train)
-nrow(df_test)
-nrow(df_valid)
-#this_method <- "glmnet"
-#this_method <- "glm"
-#this_method <- "nb"
-#this_method <- "gbm" #good
-#this_method <- "xgbLinear"
-this_method <- "xgbTree" #better
-#this_method <- "naive_bayes"
-#this_method <- "svmRadial"
-#this_method <- "cforest"
-#this_method <- "rf"
-
-# gbmGrid <-  expand.grid(n.trees = 50, interaction.depth =  c(1, 5, 9),
-#                         shrinkage = 0.01, n.minobsinnode = )
-# run model
-# head(trainDF[,predictorsNames])
-# head(trainDF[,outcomeName])
-# head(trainDF)
-# params <- list(booster = "gbtree", objective = "multi:softmax", eta = 0.1,
-#                gamma = 0, max_depth = 25, min_child_weight = 1, subsample = 0.5,
-#                colsample_bytree = 0.5, num_class = 5)
-#=============================
-#modelLookup(this_method)
-#=============================
-#number = 5 is better (and slower)
-objControl <- trainControl(method = 'repeatedcv', number = 3)#, repeats = 3)
-# objControl <- trainControl(
-#   method = "repeatedcv",
-#   number = 5,
-#   repeats = 2,
-#   returnData = FALSE,
-#   classProbs = TRUE,
-#   summaryFunction = multiClassSummary
-# )
-
-# df_train$y <- as.factor(make.names(as.character(df_train$y)))
-# class(df_train$y)
-# df_test$y <- as.factor(make.names(as.character(df_test$y)))
-
-# tune_grid <- expand.grid(nrounds=c(25, 40, 60),
-#                         max_depth = c(25),
-#                         eta = c(0.05, 0.1, 0.3),
-#                         gamma = c(0),
-#                         colsample_bytree = c(0.5, 0.75),
-#                         subsample = c(0.50),
-#                         min_child_weight = c(0))
-
-objModel <- train(df_train[, predictorsNames], df_train[, outcomeName],
-                  method = this_method,
-                  trControl = objControl)
-#-----------------------------
-var_importance <- varImp(objModel, scale = T)
-print(var_importance)
-#plot(var_importance)
-#-----------------------------
-#Predict using fitted model
-# probabilities ("prob") or integer ("raw")
-predictions <- predict(object = objModel, df_test[, predictorsNames], type = 'raw') #type='prob')
-print(postResample(pred = predictions, obs = as.factor(df_test[,outcomeName])))
-#head(predictions)
-#df_plot <- rownames(df_test)
-#----------------------------
-#Confusion matrix
-x <- confusionMatrix(predictions, df_test[, outcomeName])
-confmat <- x$table
-confmat <- round(confmat %*% solve(diag(colSums(confmat))), 3)
-confmat <- as.table(confmat)
-colnames(confmat) <- rownames(confmat)
-names(dimnames(confmat))[2] <- "Reference"
-print(confmat)
-print(x$table)
-class(confmat)
-df_plot <- as.data.frame(confmat)
-gg <- ggplot(df_plot) + geom_tile(aes(x = Prediction, y = Reference, fill = Freq))
-gg <- gg + scale_fill_gradient2(low = muted("green"), high = muted("blue"))
-gg
 
 #Again on validate set
 levels(df_test$y)
