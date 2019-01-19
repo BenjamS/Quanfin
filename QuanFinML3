@@ -1,0 +1,225 @@
+#setwd("D:/OneDrive - CGIAR/Documents")
+source('./getTsTrends.R', echo=TRUE)
+source('./getGlobTrnds.R', echo=TRUE)
+source('./getTsTrends_wSlopeInfo.R')
+source('./getTsTrendIndsAndSlope.R')
+source('./tradeSim.R', echo=TRUE)
+source('./collectiveModes.R', echo=TRUE)
+source('./fitWave.R', echo=TRUE)
+library(tidyverse)
+library(gridExtra)
+# library(plyr)
+# library(dplyr)
+# library(tidyr)
+# library(FactoMineR)
+# library(factoextra)
+# library(GGally)
+# library(cluster)
+# library(mclust)
+# library(randomForest)
+# library(corrplot)
+library(quantmod)
+library(lubridate)
+# library(xgboost)
+# library(caret)
+# library(scales)
+
+fromdate<-"2017-01-01"; todate <- "2019-01-01"
+getGlobTrnds(fromdate, todate)
+#--------------------------------
+# Remove obviously incomplete or problematic ts
+#rmcol <- which(colnames(cpgtetfmat) %in% c("EXS1.DE", "^IRX", "EWH", "AIA", "XTN", "NLR", "VXX", "PGD", "MIDD", "IWR"))
+rmcol <- which(colnames(cpgtetfmat) %in% c("EWH", "AIA", "NLR", "PGD", "IWR", "GRN",
+                                           "COW", "SGG","BAL"))
+rmcol <- c(rmcol, grep("JJ", colnames(cpgtetfmat)))
+xts_cp_mat <- cpgtetfmat[, -rmcol]
+xts_vol_mat <- volgtetfmat[, -rmcol]
+namevec <- colnames(xts_cp_mat)
+n_names <- length(namevec)
+#--------------------------------
+# Remove or replace entries in salvageable ts
+o <- apply(xts_cp_mat, 2, function(x) length(which(is.na(x))))
+table(o)
+rmcols <- which(as.numeric(o) > 60)
+colnames(xts_cp_mat)[rmcols]
+xts_cp_mat <- xts_cp_mat[, -rmcols]
+xts_vol_mat <- xts_vol_mat[, -rmcols]
+o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
+table(o)
+xts_cp_mat <- na.spline(xts_cp_mat)
+xts_vol_mat <- na.spline(xts_vol_mat)
+o <- apply(xts_cp_mat, 1, function(x) length(which(is.na(x))))
+table(o)
+n_ts <- ncol(xts_cp_mat)
+#--------------------------------
+# Get EMA'd cp mat
+per_ema <- 5
+xts_cp_ema_mat <- apply(xts_cp_mat, 2, EMA, per_ema)
+o <- apply(xts_cp_ema_mat, 1, function(x) length(which(is.na(x))))
+table(o)
+rm_rows <- c(1:(per_ema - 1))
+xts_cp_ema_mat <- xts_cp_ema_mat[-rm_rows, ]
+o <- apply(xts_cp_ema_mat, 1, function(x) length(which(is.infinite(x))))
+table(o)
+#--------------------------------
+# Get cp slope mat
+source('./slopeOsc.R')
+per_slope = 5
+indata <- xts_cp_ema_mat[, "NIB"]
+slopeOsc(indata, wind = per_slope, graph = 1, get_binry = 0)
+xts_cp_slope_mat <- apply(xts_cp_mat, 2, slopeOsc, wind = per_slope)
+#================================
+#================================
+#================================
+# Collective modes analysis
+GroupInfo_raw <- read.csv("GlobTrndsID.csv", stringsAsFactors = F)
+GroupInfo_raw$X <- NULL
+colnames(GroupInfo_raw)[1] <- "name"
+rm_these <- setdiff(GroupInfo_raw$name, colnames(xts_cp_mat))
+GroupInfo <- GroupInfo_raw[-which(GroupInfo_raw$name %in% rm_these), ]
+GroupInfo$Specific.Track <- NULL
+#Excluding "groups" with 2 or less ts
+# GroupInfo_this <- GroupInfo
+# rm_these <- names(table(GroupInfo_this$Sub.type)[which(table(GroupInfo_this$Sub.type) <= 2)])
+# rm_rows <- which(GroupInfo_this$Sub.type %in% rm_these)
+# GroupInfo_this <- GroupInfo_this[-rm_rows, ]
+#---------------------------------
+xts_cp_mat_diff <- diff(log(xts_cp_mat[-c(1:200), ]))
+xts_cp_mat_diff <- xts_cp_mat_diff[-1, ]
+mat_diff <- xts_cp_mat_diff
+datevec <- date(xts_cp_mat_diff)
+out_cm <- collectiveModes(mat_diff, date_vec = datevec, df_group = GroupInfo, 
+                          Contrib_as_ModeSq = F,
+                          AggregateContributions = F,
+                          plot_eigenportfolio_ts = T)
+#---------------------------------
+# Plot signals
+df_sigs <- out_cm[[3]]
+gathercols <- colnames(df_sigs)[c(1:(ncol(df_sigs) - 1))]
+df_sigs_wide <- df_sigs
+df_sigs <- df_sigs %>% gather_("Mode", "Value", gathercols)
+#--------------------------------
+df_plot <- subset(df_sigs, Mode %in% c("1", "ts Avg."))
+gg <- ggplot(df_plot, aes(x = Date, y = Value,
+                            group = Mode, color = Mode))
+gg <- gg + geom_line()
+gg
+#--------------------------------
+df_plot <- subset(df_sigs, !(Mode %in% c("1", "5", "6", "ts Avg.")))
+gg <- ggplot(df_plot, aes(x = Date, y = Value,
+                          group = Mode, color = Mode))
+gg <- gg + geom_line()
+gg
+#================================
+#================================
+#================================
+# Analyze a specific time series
+#--------------------------------
+this_ts_name <- "NIB"
+#--------------------------------
+# Uptrend/Downtrend analysis
+# Graphs of cp/ema/slope/slope volatility
+# with up/down trends overlaid
+in_ts_cp <- xts_cp_mat[, this_ts_name]
+#in_ts_vol <- xts_vol_mat[, this_ts_name]
+#in_ts <- list(in_ts_cp, in_ts_vol)
+in_ts <- in_ts_cp
+outlist <- getTsTrends_wSlopeInfo(in_ts, per_ema = 3, per_slope = 3,
+                                  thresh_pct_uptrend = 0.75,
+                                  thresh_pct_dntrend = -0.75,
+                                  graph_on = T)
+#================================
+# Detect periodicity
+library(WaveletComp)
+u <- df_in_ts$ts
+df_this_ts <- data.frame(x = u[!is.na(u)])
+my.w <- analyze.wavelet(df_this_ts, "x",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+my.rec <- reconstruct(my.w)
+x.rec <- my.rec$series$x.r  # x: name of original series
+
+class(my.w$Period)
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+periodogram_slope <- slopeOsc()
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg
+#plot(my.w$Period, my.w$Power.avg)
+
+
+
+
+
+
+
+in_ts
+t <- c(1:length(in_ts))
+
+outlist <- fitWave(ts, t, t_proj = NULL, q_prob = 0.99, 
+                   pval_thresh = 0.001, nper_fit = NULL, quietly = F)
+nper_vec[w] <- outlist[[3]]
+df_per <- outlist[[2]]
+pwr_vec[w] <- mean(df_per$spectrum)
+}
+# hist(pwr_vec)
+# hist(nper_vec)
+# plot(pwr_vec, cv_vec)
+# plot(pwr_vec, nper_vec)
+# plot(mu_vec, cv_vec)
+# plot(wind_vec, pwr_vec)
+
+
+
+
+
+# Baysean VAR
+
+# = Run models = #
+# = OLS = #
+modelols=HDvar(Yin,p=22) # takes a while to run
+predols=predict(modelols,h=22)
+
+# = BVAR = #
+modelbvar=lbvar(Yin, p = 22, delta = 0.5)
+predbvar=predict(modelbvar,h=22)
+
+# = Forecasts of the Coca-Cola volatility = #
+k="KO"
+plot(tail(voldata[,k],122),type="l", main="Coca-Cola forecasts")
+lines(c(rep(NA,100),predols[,k]),col=2)
+lines(c(rep(NA,100),predbvar[,k]),col=4)
+abline(v=100,lty=2,col=4)
+legend("topleft",legend=c("OLS","BVAR"),col=c(2,4),lty=1,lwd=1,seg.len=1,cex=1,bty="n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# require(graphics)
+# ## Non-Seasonal Holt-Winters
+# x <- df_ts$ts_ema
+# m <- HoltWinters(x, gamma = FALSE)
+# plot(m)
+# #plot(fitted(m))
+# ## Exponential Smoothing
+# m2 <- HoltWinters(x, gamma = FALSE, beta = FALSE)
+# lines(fitted(m2)[,1], col = 3)
