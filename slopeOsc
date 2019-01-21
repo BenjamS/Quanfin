@@ -1,22 +1,35 @@
-slopeOsc<-function(in_ts, smooth_it = T, per_ema = 3, per_slope = 3,
-                   graph_on = F,
-                   programatic_slope = F,
-                   programatic_slopeVolatility = F,
-                   get_binry = 0)
+slopeOsc <- function(in_ts, datevec, per_ema = 3, per_slope = 3,
+                     graph_on = F,
+                     programatic_slope = F,
+                     programatic_slopeVolatility = F,
+                     programatic_detrend = F)
 {
-  xts_cp <- in_ts
-  if(smooth_it){
-    xts_cp_smoothed <- EMA(xts_cp, per_ema)
-    xts_mat <- merge(xts_cp, xts_cp_smoothed)
-    df_in_ts <- fortify(xts_mat)
-    colnames(df_in_ts) <- c("Date", "ts", "ts_ema")
-    df_in_ts$ts_dt <- df_in_ts$ts - df_in_ts$ts_ema
-    df_in_ts$ts_dt_ema <- EMA(df_in_ts$ts_dt, per_ema)
-    in_ts <- df_in_ts$ts_ema
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2", "tidyverse", "quantmod")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #---------------------
+  #in_ts <- xts_cp_mat[, this_ts_name]
+  in_ts_smoothed <- EMA(in_ts, per_ema)
+  if(class(in_ts)[1] == "xts"){
+    ts_mat <- merge(in_ts, in_ts_smoothed)
+    df_in_ts <- fortify(ts_mat)
+    colnames(df_in_ts) <- c("Date", "time series raw", "time series smoothed")
   }else{
-    df_in_ts <- fortify(xts_cp)
-    colnames(df_in_ts) <- c("Date", "ts")
+    df_in_ts <- data.frame(in_ts, in_ts_smoothed)
+    colnames(df_in_ts) <- c("time series raw", "time series smoothed")
+    df_in_ts$Date <- seq(1, length(in_ts), 1)
   }
+  df_in_ts$`time series detrended raw` <- df_in_ts$`time series raw` - df_in_ts$`time series smoothed`
+  df_in_ts$`time series detrended smoothed` <- EMA(df_in_ts$`time series detrended raw`, per_ema)
+  in_ts <- df_in_ts$`time series smoothed`
+  #--------------------------------
   slope_window <- per_slope
   n_ts <- length(in_ts)
   s_start <- slope_window + 1
@@ -48,40 +61,65 @@ slopeOsc<-function(in_ts, smooth_it = T, per_ema = 3, per_slope = 3,
   mu_dydx_mu <- mean(dydx_mu, na.rm = T)
   sd_dydx_mu <- sd(dydx_mu, na.rm = T)
   cv_dydx_mu <- sd_dydx_mu / mu_dydx_mu
-  slope <- c(rep(NA, per_slope), dydt_mu)
-  slope_volatility = c(rep(NA, per_slope), ldydt_cv)
-  df_slope <- data.frame(Date = df_in_ts$Date, slope, slope_volatility)
+  slope <- c(rep(NA, per_slope), dydx_mu)
+  slope_volatility = c(rep(NA, per_slope), ldydx_cv)
+  df_slope <- data.frame(slope, slope_volatility)
+  colnames(df_slope)[2:ncol(df_slope)] <- c("time series slope", "time series slope logged volatility")
+  if(class(in_ts)[1] == "xts"){df_slope$Date = df_in_ts$Date}
+  else{df_slope$Date = seq(1, length(in_ts), 1)}
   df_ts_and_slope <- merge(df_in_ts, df_slope)
   #--------------------------------
-  if(programatic_slope){out <- slope}
-  if(programatic_slopeVolatility){out <- slope_volatility}
-  if(!programatic_slope & !programatic_slopeVolatility){
-    outlist <- df_slope
-    }
+  if(programatic_slope){out <- slope; plot(slope)}
+  if(programatic_slopeVolatility){out <- slope_volatility; plot(slope_volatility)}
+  if(programatic_detrend){out <- df_in_ts$`time series detrended raw`; plot(df_in_ts$`time series detrended raw`)}
+  if(!programatic_slope & !programatic_slopeVolatility
+     & !programatic_detrend){
+    out <- df_ts_and_slope
+  }
   #--------------------------------
   if(graph_on){
-
-    colnames(df_ts_and_slope)[2:ncol(df_slope)] <- c("time series slope", "time series slope logged volatility")
-    gathercols <- colnames(df_slope)[2:ncol(df_slope)]
-    df_plot <- gather_(df_slope, "Type", "Value", gathercols)
     #----
-    df_plot_mean_line <- data.frame(Type = unique(df_plot$Type), mu_line = c(mu_dydt_mu, mu_ldydt_cv))
-    df_plot_sd_lines1 <- data.frame(Type = unique(df_plot$Type), sd_line = c(mu_dydt_mu + 2 * sd_dydt_mu,
-                                                                             mu_ldydt_cv + 2 * sd_ldydt_cv))
-    df_plot_sd_lines2 <- data.frame(Type = unique(df_plot$Type), sd_line = c(mu_dydt_mu - 2 * sd_dydt_mu,
-                                                                             mu_ldydt_cv - 2 * sd_ldydt_cv))
+    mu_ts <- mean(df_in_ts$`time series raw`, na.rm = T)
+    sd_ts <- sd(df_in_ts$`time series raw`, na.rm = T)
+    sd_ts_lines <- c(mu_ts + 2 * sd_ts,
+                     mu_ts - 2 * sd_ts)
+    
+    mu_ts_dt <- mean(df_in_ts$`time series detrended`, na.rm = T)
+    sd_ts_dt <- sd(df_in_ts$`time series detrended`, na.rm = T)
+    sd_ts_dt_lines <- c(mu_ts_dt + 2 * sd_ts_dt,
+                        mu_ts_dt - 2 * sd_ts_dt)
+    #----
+    gathercols <- colnames(df_ts_and_slope)[2:ncol(df_ts_and_slope)]
+    df_ts_and_slope_long <- gather_(df_ts_and_slope, "Type", "Value", gathercols)
+    u <- df_ts_and_slope_long$Type
+    df_ts_and_slope_long$Subtype <- NA
+    df_ts_and_slope_long$Subtype[grep("smoothed", u)] <- "smooth"
+    df_ts_and_slope_long$Subtype[grep("raw", u)] <- "raw"
+    df_ts_and_slope_long$Type[grep("time series raw", u)] <- "time series"
+    df_ts_and_slope_long$Type[grep("time series smooth", u)] <- "time series"
+    df_ts_and_slope_long$Type[grep("time series detrended", u)] <- "time series detrended"
+    #----
+    df_plot <- df_ts_and_slope_long
+    df_plot_mean_line <- data.frame(Type = unique(df_plot$Type),
+                                    mu_line = c(mu_ts, mu_ts_dt,
+                                                mu_dydx_mu, mu_ldydx_cv))
+    df_plot_sd_lines1 <- data.frame(Type = unique(df_plot$Type),
+                                    sd_line = c(mu_ts + 2 * sd_ts,
+                                                mu_ts_dt + 2 * sd_ts_dt,
+                                                mu_dydx_mu + 2 * sd_dydx_mu,
+                                                mu_ldydx_cv + 2 * sd_ldydx_cv))
+    df_plot_sd_lines2 <- data.frame(Type = unique(df_plot$Type),
+                                    sd_line = c(mu_ts - 2 * sd_ts,
+                                                mu_ts_dt - 2 * sd_ts_dt,
+                                                mu_dydx_mu - 2 * sd_dydx_mu,
+                                                mu_ldydx_cv - 2 * sd_ldydx_cv))
     #----
     gg <- ggplot()
-    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
-                                                 ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
-    gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
-    gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value))
+    gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
     gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free")
     gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
     gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
     gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
-    gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStartDate), color = "darkmagenta", alpha = 0.5)
-    gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStopDate), color = "darkmagenta", alpha = 0.5)
     gg <- gg + theme_bw()
     gg <- gg + theme(axis.title.x = element_blank(),
                      axis.text.x = element_blank(),
@@ -90,9 +128,8 @@ slopeOsc<-function(in_ts, smooth_it = T, per_ema = 3, per_slope = 3,
                      panel.grid.major = element_blank(),
                      panel.grid.minor = element_blank(),
                      legend.position = "none")
-    #gg
-    
+    print(gg)
   }
   #--------------------------------
-  return(outlist)
+  return(out)
 }
