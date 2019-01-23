@@ -1,0 +1,242 @@
+getTsTrends_wSlopeInfo <- function(in_ts, per_ema = 3, per_slope = 3,
+                                   thresh_pct_uptrend = 0.75,
+                                   thresh_pct_dntrend = -0.75,
+                                   graph_on = F,
+                                   Periods = NULL)
+{
+  #in_ts <- xts_cp_mat[, "NIB"]
+  # in_ts should be an xts object. in_ts should be the raw time series, unsmoothed.
+  # in_ts will be smoothed below to an exponential moving avg with period defined
+  # by per_ema. Alternatively, in_ts can be smoothed via VWMA, in which case you
+  # enter in_ts as a list object containing both the price and volume series
+  # like this: in_ts <- list(xts_cp, xts_vol)
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2", "tidyverse", "quantmod", "ggpubr")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #----------------------
+  if(class(in_ts)[1] == "list"){
+    xts_cp <- in_ts[[1]]
+    #datevec <- index(in_ts)
+    xts_vol <- in_ts[[2]]
+    xts_cp_smoothed <- VWMA(xts_cp, xts_vol)
+  }else{
+    #datevec <- index(in_ts)
+    xts_cp <- in_ts
+    xts_cp_smoothed <- EMA(xts_cp, per_ema)
+  }
+  xts_mat <- merge(xts_cp, xts_cp_smoothed)
+  df_in_ts <- fortify(xts_mat)
+  colnames(df_in_ts) <- c("Date", "time series raw", "time series smoothed")
+  df_in_ts$`time series detrended` <- df_in_ts$`time series raw` - df_in_ts$`time series smoothed`
+  df_in_ts$`time series detrended smoothed` <- EMA(df_in_ts$`time series detrended`, per_ema)
+  #---------------------
+  outlist <- getTsTrendIndsAndSlope(xts_cp_smoothed, per_slope, per_ema, quietly)
+  ind_upBeg <- outlist[[1]]
+  ind_upFin <- outlist[[2]]
+  ind_dnBeg <- outlist[[3]]
+  ind_dnFin <- outlist[[4]]
+  dydt_mu <- outlist[[5]]
+  ldydt_cv <- outlist[[6]]
+  slope <- c(rep(NA, per_slope), dydt_mu)
+  slope_volatility = c(rep(NA, per_slope), ldydt_cv)
+  df_slope <- data.frame(Date = df_in_ts$Date, slope, slope_volatility)
+  colnames(df_slope)[2:ncol(df_slope)] <- c("time series slope", "time series slope logged volatility")
+  df_ts_and_slope <- merge(df_in_ts, df_slope)
+  #----------------------
+  #Get value of trend increase/decrease (as magnitude and percentage)
+  #and trend durations
+  #Uptrends
+  df_a <- df_ts_and_slope
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$UpStartDate <- NA
+  df_a$UpStartDate[ind_upBeg] <- as.character(df_a$Date[ind_upBeg])
+  df_a <- subset(df_a, is.na(UpStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- df_ts_and_slope
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$UpStopDate <- NA
+  df_b$UpStopDate[ind_upFin] <- as.character(df_b$Date[ind_upFin])
+  df_b <- subset(df_b, is.na(UpStopDate) != T)
+  df_b$Date <- NULL
+  df_upTrends <- cbind(df_a, df_b)
+  df_upTrends$Change <- df_upTrends$`Stop time series raw` - df_upTrends$`Start time series raw`
+  df_upTrends$`Pct. Change` <- 100 * df_upTrends$Change / df_upTrends$`Start time series raw`
+  df_upTrends$Duration <- ind_upFin - ind_upBeg
+  df_upTrends$`Pct. Change/Time` <- df_upTrends$`Pct. Change` / df_upTrends$Duration
+  df_upTrends$`False uptrend` <- ifelse(df_upTrends$`Pct. Change` < thresh_pct_uptrend, 1, 0)
+  df_upTrends$UpStartDate <- as.Date(df_upTrends$UpStartDate)
+  df_upTrends$UpStopDate <- as.Date(df_upTrends$UpStopDate)
+  #----------------------
+  #Downtrends
+  df_a <- df_ts_and_slope
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$DnStartDate <- NA
+  df_a$DnStartDate[ind_dnBeg] <- as.character(df_a$Date[ind_dnBeg])
+  df_a <- subset(df_a, is.na(DnStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- df_ts_and_slope
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$DnStopDate <- NA
+  df_b$DnStopDate[ind_dnFin] <- as.character(df_b$Date[ind_dnFin])
+  df_b <- subset(df_b, is.na(DnStopDate) != T)
+  df_b$Date <- NULL
+  df_dnTrends <- cbind(df_a, df_b)
+  df_dnTrends$Change <- df_dnTrends$`Stop time series raw` - df_dnTrends$`Start time series raw`
+  df_dnTrends$`Pct. Change` <- 100 * df_dnTrends$Change / df_dnTrends$`Start time series raw`
+  df_dnTrends$Duration <- ind_dnFin - ind_dnBeg
+  df_dnTrends$`Pct. Change/Time` <- df_dnTrends$`Pct. Change` / df_dnTrends$Duration
+  df_dnTrends$`False downtrend` <- ifelse(df_dnTrends$`Pct. Change` > thresh_pct_dntrend, 1, 0)
+  df_dnTrends$DnStartDate <- as.Date(df_dnTrends$DnStartDate)
+  df_dnTrends$DnStopDate <- as.Date(df_dnTrends$DnStopDate)
+  #----------------------
+  if(graph_on){
+    #----
+    mu_dydt_mu <- mean(dydt_mu, na.rm = T)
+    mu_ldydt_cv <- mean(ldydt_cv, na.rm = T)
+    sd_dydt_mu <- sd(dydt_mu, na.rm = T)
+    sd_ldydt_cv <- sd(ldydt_cv, na.rm = T)
+    #----
+    mu_ts <- mean(df_in_ts$`time series raw`, na.rm = T)
+    sd_ts <- sd(df_in_ts$`time series raw`, na.rm = T)
+    sd_ts_lines <- c(mu_ts + 2 * sd_ts,
+                        mu_ts - 2 * sd_ts)
+    
+    mu_ts_dt <- mean(df_in_ts$`time series detrended`, na.rm = T)
+    sd_ts_dt <- sd(df_in_ts$`time series detrended`, na.rm = T)
+    sd_ts_dt_lines <- c(mu_ts_dt + 2 * sd_ts_dt,
+                        mu_ts_dt - 2 * sd_ts_dt)
+    
+    if(!is.null(Periods)){
+      n_periods <- length(Periods)
+      periodColor_vec <- c("red", "blue", "cyan", "orange") #rand_color(n_periods, hue = "red")
+      periodDate_vec <- list()
+      for(i in 1:n_periods){
+        ind <- seq(0, n_ts, round(Periods[i]))[-1]
+        periodDate_vec[[i]] <- df_ts_and_slope$Date[ind]
+      }
+    }
+
+    #----
+    # Uptrend plot
+    # Uptrend starts and finishes, including false starts/finishes marked
+    # by vertical lines, and shading according to "return intensity"
+    # (i.e. pct. change / time) overlaid onto:
+    # 1) raw time series with smoothed version added
+    # 2) detrended time series with smoothed version added
+    # 3) slope of raw time series
+    # 4) logged volatility (cv) of raw time series
+    # All plots have mean and +/- 2 s.d. lines added.
+    #----
+    df_plot_up_true <- subset(df_upTrends, `False uptrend` == 0)
+    df_plot_up_false <- subset(df_upTrends, `False uptrend` == 1)
+    #----
+    gathercols <- colnames(df_ts_and_slope)[2:ncol(df_ts_and_slope)]
+    df_ts_and_slope_long <- gather_(df_ts_and_slope, "Type", "Value", gathercols)
+    u <- df_ts_and_slope_long$Type
+    df_ts_and_slope_long$Subtype <- NA
+    df_ts_and_slope_long$Subtype[grep("smoothed", u)] <- "smooth"
+    df_ts_and_slope_long$Subtype[grep("raw", u)] <- "raw"
+    df_ts_and_slope_long$Type[grep("time series raw", u)] <- "time series"
+    df_ts_and_slope_long$Type[grep("time series smooth", u)] <- "time series"
+    df_ts_and_slope_long$Type[grep("time series detrended", u)] <- "time series detrended"
+    #----
+    df_plot <- df_ts_and_slope_long
+    df_plot_mean_line <- data.frame(Type = unique(df_plot$Type),
+                                    mu_line = c(mu_ts, mu_ts_dt,
+                                                mu_dydt_mu, mu_ldydt_cv))
+    df_plot_sd_lines1 <- data.frame(Type = unique(df_plot$Type),
+                                    sd_line = c(mu_ts + 2 * sd_ts,
+                                                mu_ts_dt + 2 * sd_ts_dt,
+                                                mu_dydt_mu + 2 * sd_dydt_mu,
+                                                mu_ldydt_cv + 2 * sd_ldydt_cv))
+    df_plot_sd_lines2 <- data.frame(Type = unique(df_plot$Type),
+                                    sd_line = c(mu_ts - 2 * sd_ts,
+                                                mu_ts_dt - 2 * sd_ts_dt,
+                                                mu_dydt_mu - 2 * sd_dydt_mu,
+                                                mu_ldydt_cv - 2 * sd_ldydt_cv))
+    #----
+    gg <- ggplot()
+    gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                                 ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+    gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+    gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+    gg <- gg + scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y")
+    gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+    gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStartDate), color = "darkmagenta", alpha = 0.4)
+    gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStopDate), color = "darkmagenta", alpha = 0.4)
+    gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
+    gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
+    gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
+    if(!is.null(Periods)){
+      for(i in 1:n_periods){
+        gg <- gg + geom_vline(xintercept = periodDate_vec[[i]],
+                              color = periodColor_vec[i],
+                              linetype = "dashed", size = 1.25)
+      }
+    }
+    gg <- gg + theme_bw()
+    gg <- gg + ggtitle("Uptrend Overlays")
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     # axis.text.x = element_blank(),
+                     # axis.ticks.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     legend.position = "none",
+                     plot.title = element_text(hjust = 0.5))
+    print(gg)
+    #===================================================
+    # Downtrend plots
+    # Downtrend starts and finishes, including false starts/finishes marked
+    # by vertical lines, and shading according to "return intensity"
+    # (i.e. pct. change / time) overlaid onto:
+    # 1) raw time series with smoothed version added
+    # 2) detrended time series with smoothed version added
+    # 3) slope of raw time series
+    # 4) logged volatility (cv) of raw time series
+    # All plots have mean and +/- 2 s.d. lines added.
+    #----
+    df_plot_dn_true <- subset(df_dnTrends, `False downtrend` == 0)
+    df_plot_dn_false <- subset(df_dnTrends, `False downtrend` == 1)
+    #----
+    gg <- ggplot()
+    gg <- gg + geom_rect(data = df_dnTrends, aes(xmin = DnStartDate, xmax = DnStopDate,
+                                                 ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+    gg <- gg + scale_fill_gradient2(low = "green", mid = "khaki2", high = "darkmagenta")
+    gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+    gg <- gg + scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y")
+    gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+    gg <- gg + geom_vline(data = df_plot_dn_false, aes(xintercept = DnStartDate), color = "darkmagenta", alpha = 0.4)
+    gg <- gg + geom_vline(data = df_plot_dn_false, aes(xintercept = DnStopDate), color = "darkmagenta", alpha = 0.4)
+    gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
+    gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
+    gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
+    if(!is.null(Periods)){
+      for(i in 1:n_periods){
+        gg <- gg + geom_vline(xintercept = periodDate_vec[[i]],
+                              color = periodColor_vec[i],
+                              linetype = "dashed", size = 1.25)
+      }
+    }
+    gg <- gg + theme_bw()
+    gg <- gg + ggtitle("Downtrend Overlays")
+    gg <- gg + theme(axis.title.x = element_blank(),
+                     #axis.text.x = element_blank(),
+                     #axis.ticks.x = element_blank(),
+                     axis.title.y = element_blank(),
+                     panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     legend.position = "none",
+                     plot.title = element_text(hjust = 0.5))
+    print(gg)
+  }
+  outlist <- list(df_upTrends, df_dnTrends, df_ts_and_slope)
+  return(outlist)
+}
