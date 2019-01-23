@@ -1,0 +1,101 @@
+getTsTrendIndsAndSlope <- function(in_ts, slope_window = 3, per_ema = NULL, quietly = T)
+{
+  #in_ts <- xts_cpEMA[, "NIB"]
+  #in_ts <- xts_cp_smoothed
+  #Captures index of sustained up and down trends of a time series
+  #by identifying periods of consecutive time steps in which slope
+  #is positve (for up trends) or negative (for down trends)
+  #Since this is based on measuring slope in a rolling window,
+  #best to use a smoothed series (via EMA for eg.). Consider scaling too.
+  #---------------------
+  #Make sure required packages are loaded
+  #---------------------
+  required_packages <- c("pracma", "ggplot2", "tidyverse", "quantmod", "ggpubr")
+  lapply(required_packages, FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  })
+  #---------------------
+  #Rolling slope
+  #---------------------
+  #in_ts <- xts_cpVWMA[-n_ts, "SPY"]
+  #per_ema <- 13
+  #in_ts <- EMA(xts_cp[, 1], per_ema)
+  #in_ts <- in_ts[-c(1:(per_ema - 1))]
+  n_ts <- length(in_ts)
+  s_start <- slope_window + 1
+  s_end <- n_ts
+  x <- c(1:(slope_window + 1))
+  dydx_mu <- c()
+  dydx_sd <- c()
+  t <- 0
+  #---------------------
+  for(s in s_start:s_end)
+  {
+    datseg <- in_ts[(s - slope_window):s]
+    q <- polyfit(x, datseg, n = 2)
+    a2 <- q[1]; a1 <- q[2]; a0 <- q[3]
+    this_slope <- 2 * a2 * x + a1
+    t <- t + 1
+    dydx_mu[t] <- mean(this_slope, na.rm = T)
+    dydx_sd[t] <- sd(this_slope, na.rm = T)
+  }
+  dydx_cv <- dydx_sd / dydx_mu
+  if(is.null(per_ema) == F){
+    dydx_mu[1:(per_ema - 1)] <- NA
+    dydx_cv[1:(per_ema - 1)] <- NA
+  }
+  mu_dydx_cv <- mean(abs(dydx_cv), na.rm = T)
+  ldydx_cv <- log(abs(dydx_cv)) #EMA(log(abs(dydx_cv)), slope_window)
+  dydx_sd <- EMA(dydx_sd, slope_window)
+  mu_ldydx_cv <- mean(ldydx_cv, na.rm = T)
+  mu_dydx_mu <- mean(dydx_mu, na.rm = T)
+  sd_dydx_mu <- sd(dydx_mu, na.rm = T)
+  cv_dydx_mu <- sd_dydx_mu / mu_dydx_mu
+  #---------------------
+  #Identify periods of consecutively positive (for up trends)
+  #or negative (for down trends) slope
+  #---------------------
+  df <- fortify(in_ts)
+  colnames(df)[2] <- "ts"
+  df$Index <- as.Date(df$Index)
+  df$dydxmu <- c(rep(NA, slope_window), dydx_mu)
+  df$dydxsd <- c(rep(NA, slope_window), dydx_sd)
+  df$ldydxcv <- c(rep(NA, slope_window), ldydx_cv)
+  #---------------------
+  #Initial capture based on slope crossings of the mean slope
+  ind_uptrnd <- which(df$dydxmu > mu_dydx_mu)
+  ind_dntrnd <- which(df$dydxmu <= mu_dydx_mu)
+  # #For graphing purposes
+  # df$ts_up <- NA
+  # df$ts_dn <- NA
+  # df$ts_up[ind_uptrnd] <- df$ts[ind_uptrnd]
+  # df$ts_dn[ind_dntrnd] <- df$ts[ind_dntrnd]
+  #---------------------
+  #Get trend start/finish points by taking differences
+  ind_upFin <- ind_uptrnd[which(diff(ind_uptrnd) != 1)]
+  ind_upBeg <- ind_dntrnd[which(diff(ind_dntrnd) != 1)]
+  ind_dnFin <- ind_upBeg
+  ind_dnBeg <- ind_upFin
+  #If necessary, remove start/finish points so that you have one finish point
+  #for every start point (i.e. a complete set)
+  n_upBeg <- length(ind_upBeg)
+  n_upFin <- length(ind_upFin)
+  n_upBeg_raw <- n_upBeg
+  n_upFin_raw <- n_upFin
+  n_dnBeg <- length(ind_dnBeg)
+  n_dnFin <- length(ind_dnFin)
+  n_dnBeg_raw <- n_dnBeg
+  n_dnFin_raw <- n_dnFin
+  if(ind_upBeg[1] > ind_upFin[1]){ind_upFin <- ind_upFin[-1]; n_upFin <- length(ind_upFin)}
+  if(ind_upBeg[n_upBeg] > ind_upFin[n_upFin]){ind_upBeg <- ind_upBeg[-n_upBeg]; n_upBeg <- length(ind_upBeg)}
+  if(sum(ind_upFin - ind_upBeg < 0) > 0){print("Problem with uptrends")}
+  if(ind_dnBeg[1] > ind_dnFin[1]){ind_dnFin <- ind_dnFin[-1]; n_dnFin <- length(ind_dnFin)}
+  if(ind_dnBeg[n_dnBeg] > ind_dnFin[n_dnFin]){ind_dnBeg <- ind_dnBeg[-n_dnBeg]; n_dnBeg <- length(ind_dnBeg)}
+  if(sum(ind_dnFin - ind_dnBeg < 0) > 0){print("Problem with downtrends")}
+  #=================================
+  outlist <- list(ind_upBeg, ind_upFin, ind_dnBeg, ind_dnFin, dydx_mu, ldydx_cv)
+  return(outlist)
+}
