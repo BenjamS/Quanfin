@@ -127,7 +127,7 @@ rmcols <- which(is.na(xts_zvol_mat[random_row,]))
 which(colnames(xts_zvol_mat) == "^IRX")
 colnames(xts_zvol_mat[, rmcols])
 print(rmcols)
-xts_zvol_mat <- xts_zvol_mat[, -(rm_cols + 1)] #bizarre
+xts_zvol_mat <- xts_zvol_mat[, -(rmcols)]
 colnames(xts_zvol_mat)
 o <- apply(xts_zvol_mat, 1, function(x) length(which(is.na(x))))
 table(o)
@@ -175,12 +175,15 @@ xts_group <- xts(df_group, as.Date(rownames(df_group)))
 #================================
 #================================
 # Collective modes analysis
-xts_cp_mat_diff <- diff(log(xts_cp_mat))
-#xts_cp_mat_diff <- diff(log(xts_cp_mat[-c(1:200), ]))
-xts_cp_mat_diff <- xts_cp_mat_diff[-1, ]
-datevec <- date(xts_cp_mat_diff)
-mat_diff <- xts_cp_mat_diff
-rm_these <- setdiff(GroupInfo_raw$name, colnames(xts_cp_mat))
+xts_mat_diff <- diff(xts_cp_slopeVolat_mat)
+#xts_mat_diff <- diff(xts_cp_slope_mat)
+#xts_mat_diff <- diff(xts_zvol_mat)
+#xts_mat_diff <- diff(log(xts_cp_mat))
+#xts_mat_diff <- diff(log(xts_cp_mat[-c(1:200), ]))
+xts_mat_diff <- xts_mat_diff[-1, ]
+datevec <- date(xts_mat_diff)
+mat_diff <- xts_mat_diff
+rm_these <- setdiff(GroupInfo_raw$name, colnames(mat_diff))
 GroupInfo_cm <- GroupInfo_raw[-which(GroupInfo_raw$name %in% rm_these), ]
 GroupInfo_cm$Specific.Track <- NULL
 
@@ -220,7 +223,7 @@ this_ts_name <- "NIB"
 # Graphs of cp/ema/slope/slope volatility
 # with up/down trends overlaid
 #in_ts_cp <- xts_cp_mat[-c(1:200), this_ts_name]
-xts_cp <- xts_cp_mat[, this_ts_name]
+xts_cp <- xts_cp_mat[-c(1:300), this_ts_name]
 xts_vol <- xts_vol_mat[, this_ts_name]
 #in_ts <- list(in_ts_cp, in_ts_vol)
 in_ts <- xts_cp
@@ -709,12 +712,238 @@ barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
 
 
 
-# require(graphics)
-# ## Non-Seasonal Holt-Winters
-# x <- df_ts$ts_ema
-# m <- HoltWinters(x, gamma = FALSE)
-# plot(m)
-# #plot(fitted(m))
-# ## Exponential Smoothing
-# m2 <- HoltWinters(x, gamma = FALSE, beta = FALSE)
-# lines(fitted(m2)[,1], col = 3)
+#=======================================
+#=======================================
+#=======================================
+# Prototyping area
+#=======================================
+#--------------------------------
+this_ts_name <- "NIB"
+#--------------------------------
+these_days <- -c(1:300)
+#--------------------------------
+xts_cp <- xts_cp_mat[these_days, this_ts_name]
+# Uptrend/Downtrend analysis
+# Graphs of cp/ema/slope/slope volatility
+# with up/down trends overlaid
+in_ts <- xts_cp
+outlist <- getTsTrends_wSlopeInfo(in_ts, per_ema = 3, per_slope = 3,
+                                  thresh_pct_uptrend = 0.75,
+                                  thresh_pct_dntrend = -0.75,
+                                  graph_on = T,
+                                  Periods = NULL)
+df_upTrends <- outlist[[1]]
+df_dnTrends <- outlist[[2]]
+df_plot_up_true <- subset(df_upTrends, `False uptrend` == 0)
+df_plot_up_false <- subset(df_upTrends, `False uptrend` == 1)
+#---------------------------------
+df_cp <- fortify(xts_cp_mat[, this_ts_name])
+colnames(df_cp)[2] <- "cp_raw"
+df_cp_ema <- fortify(xts_cp_ema_mat[, this_ts_name])
+colnames(df_cp_ema)[2] <- "cp_raw_ema"
+df_cp_ema$Index <- as.Date(df_cp_ema$Index)
+df_cp_dt <- fortify(xts_cp_detrend_mat[, this_ts_name])
+colnames(df_cp_dt)[2] <- "cp_dt"
+df_cp_dt$Index <- as.Date(df_cp_dt$Index)
+df_cp_dt_ema <- fortify(EMA(xts_cp_detrend_mat[, this_ts_name], per_ema))
+colnames(df_cp_dt_ema)[2] <- "cp_dt_ema"
+df_cp_dt_ema$Index <- as.Date(df_cp_dt_ema$Index)
+list_df <- list(df_cp, df_cp_ema, df_cp_dt, df_cp_dt_ema)
+df_cp_all <- join_all(list_df)
+df_cp_all <- df_cp_all[these_days, ]
+colnames(df_cp_all)[1] <- "Date"
+#---------------------------------
+class(df_sigs$Date)
+df_cp_all_wSigs <- merge(df_cp_all, df_sigs)
+#---------------------------------
+#gathercols <- colnames(df_cp_all)[2:ncol(df_cp_all)]
+#df_cp_all <- df_cp_all %>% gather_("Type", "Value", gathercols)
+gathercols <- colnames(df_cp_all_wSigs)[2:ncol(df_cp_all_wSigs)]
+df_cp_all_wSigs <- df_cp_all_wSigs %>% gather_("Type", "Value", gathercols)
+unique(df_cp_all_wSigs$Type)
+nsigs <- ncol(df_sigs) - 2
+rm_these_sigs <- paste("Signal", c(3:nsigs))
+df_cp_all_wSigs <- subset(df_cp_all_wSigs, !(Type %in% c(rm_these_sigs, "ts avg.")))
+df_cp_all_wSigs$Subtype <- "unsmooth"
+u <- df_cp_all_wSigs$Type
+df_cp_all_wSigs$Subtype[grep("ema", u)] <- "smooth"
+df_cp_all_wSigs$Type[grep("dt", u)] <- "cp detrended"
+df_cp_all_wSigs$Type[grep("raw", u)] <- "cp"
+df_cp_all_wSigs$Value <- as.numeric(df_cp_all_wSigs$Value)
+#---------------------------------
+df_vol <- fortify(xts_zvol_mat[, this_ts_name])
+colnames(df_vol) <- c("Date", "vol")
+class(df_vol$Date)
+n_bins <- nrow(df_vol)
+df_volShade <- data.frame(xmin = df_vol$Date[-n_bins], xmax = df_vol$Date[-1])
+df_volShade$vol <- df_vol$vol[-1]
+mu_vol <- mean(df_vol$vol)
+df_volShade <- df_volShade[these_days, ]
+#---------------------------------
+# df_mu <- df_cp_all %>% group_by(Type, Subtype) %>% summarize(mu = mean(Value))
+# df_mu
+mu_ts <- mean(df_cp$cp_raw)
+sd_ts <- sd(df_cp$cp_raw)
+mu_ts_dt <- mean(df_cp_dt$cp_dt)
+sd_ts_dt <- sd(df_cp_dt$cp_dt)
+df_cp_all_wSigs_mean_line <- data.frame(Type = unique(df_cp_all_wSigs$Type),
+                                mu_line = c(mu_ts, mu_ts_dt))
+df_cp_all_wSigs_sd_lines1 <- data.frame(Type = unique(df_cp_all_wSigs$Type),
+                                sd_line = c(mu_ts + 2 * sd_ts,
+                                            mu_ts_dt + 2 * sd_ts_dt))
+df_cp_all_wSigs_sd_lines2 <- data.frame(Type = unique(df_cp_all_wSigs$Type),
+                                sd_line = c(mu_ts - 2 * sd_ts,
+                                            mu_ts_dt - 2 * sd_ts_dt))
+#---------------------------------
+df_vol <- df_vol[these_days, ]
+colnames(df_vol)[2] <- "Value"
+df_vol$Type <- "Volume"
+df_vol$Subtype <- NA
+df_vol <- df_vol[, c("Date", "Type", "Value", "Subtype")]
+df_plot <- rbind(df_cp_all, df_vol)
+df_plot <- df_cp_all_wSigs
+gg <- ggplot()
+gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+#gg <- gg + scale_fill_gradient(low = "darkmagenta", high = "cyan")
+gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+gg <- gg + scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y")
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStartDate), color = "darkmagenta", alpha = 0.4)
+gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStopDate), color = "darkmagenta", alpha = 0.4)
+gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
+gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
+gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
+gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
+gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
+gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
+gg <- gg + theme_bw()
+#gg <- gg + ggtitle("")
+gg <- gg + theme(#axis.title.x = element_blank(),
+                 #axis.text.x = element_blank(),
+                 #axis.ticks.x = element_blank(),
+                 axis.title.y = element_blank(),
+                 panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                 legend.position = "none",
+                 plot.title = element_text(hjust = 0.5))
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gathercols <- colnames(df_ts_and_slope)[2:ncol(df_ts_and_slope)]
+df_ts_and_slope_long <- gather_(df_ts_and_slope, "Type", "Value", gathercols)
+u <- df_ts_and_slope_long$Type
+df_ts_and_slope_long$Subtype <- NA
+df_ts_and_slope_long$Subtype[grep("smoothed", u)] <- "smooth"
+df_ts_and_slope_long$Subtype[grep("raw", u)] <- "raw"
+df_ts_and_slope_long$Type[grep("time series raw", u)] <- "time series"
+df_ts_and_slope_long$Type[grep("time series smooth", u)] <- "time series"
+df_ts_and_slope_long$Type[grep("time series detrended", u)] <- "time series detrended"
+#----
+df_plot <- df_ts_and_slope_long
+df_plot_mean_line <- data.frame(Type = unique(df_plot$Type),
+                                mu_line = c(mu_ts, mu_ts_dt,
+                                            mu_dydt_mu, mu_ldydt_cv))
+df_plot_sd_lines1 <- data.frame(Type = unique(df_plot$Type),
+                                sd_line = c(mu_ts + 2 * sd_ts,
+                                            mu_ts_dt + 2 * sd_ts_dt,
+                                            mu_dydt_mu + 2 * sd_dydt_mu,
+                                            mu_ldydt_cv + 2 * sd_ldydt_cv))
+df_plot_sd_lines2 <- data.frame(Type = unique(df_plot$Type),
+                                sd_line = c(mu_ts - 2 * sd_ts,
+                                            mu_ts_dt - 2 * sd_ts_dt,
+                                            mu_dydt_mu - 2 * sd_dydt_mu,
+                                            mu_ldydt_cv - 2 * sd_ldydt_cv))
+#----
+gg <- ggplot()
+gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+gg <- gg + scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y")
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStartDate), color = "darkmagenta", alpha = 0.4)
+gg <- gg + geom_vline(data = df_plot_up_false, aes(xintercept = UpStopDate), color = "darkmagenta", alpha = 0.4)
+gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "blue")
+gg <- gg + geom_hline(data = df_plot_sd_lines1, aes(yintercept = sd_line), color = "orange")
+gg <- gg + geom_hline(data = df_plot_sd_lines2, aes(yintercept = sd_line), color = "orange")
+if(!is.null(Periods)){
+  for(i in 1:n_periods){
+    gg <- gg + geom_vline(xintercept = periodDate_vec[[i]],
+                          color = periodColor_vec[i],
+                          linetype = "dashed", size = 1.25)
+  }
+}
+gg <- gg + theme_bw()
+gg <- gg + ggtitle("Uptrend Overlays")
+gg <- gg + theme(axis.title.x = element_blank(),
+                 # axis.text.x = element_blank(),
+                 # axis.ticks.x = element_blank(),
+                 axis.title.y = element_blank(),
+                 panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                 legend.position = "none",
+                 plot.title = element_text(hjust = 0.5))
+print(gg)
+
+
+
+
+
+#================================
+# Detect periodicity
+df_this_ts <- fortify(in_ts)
+colnames(df_this_ts)[2] <- "x"
+# rmrows <- which(is.na(df_this_ts$x))
+# df_this_ts <- df_this_ts[-rmrows, ] 
+my.w <- analyze.wavelet(df_this_ts, "x",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+n_per <- 3
+outmat <- findpeaks(df_periodogram$power, nups = 1, ndowns = 1, zero = "0",
+                    peakpat = NULL, minpeakheight = 0.05, minpeakdistance = 1, threshold = 0, npeaks = n_per, sortstr = FALSE)
+ind_critPoints <- outmat[, 2]
+critPoints <- df_periodogram$period[ind_critPoints]
+critPoints
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = critPoints, color = "cyan", size = 1.5)
+gg
