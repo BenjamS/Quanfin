@@ -1,0 +1,206 @@
+library(pracma)
+library(quantmod)
+library(WaveletComp)
+library(ggplot2)
+
+gtIDmat <- read.csv("GlobTrndsID.csv", stringsAsFactors = FALSE)
+gtIDmat <- gtIDmat[, 2:ncol(gtIDmat)]
+#gtIDmat<<-gtIDmat
+
+ind <- which(gtIDmat[, 1] == "NIB")
+gtetf <- gtIDmat[ind, 1]
+fromdate <- "2016-01-01"; todate <- "2019-02-01"
+in_ohlcv <- getSymbols(gtetf, from = fromdate, to = todate, src = "yahoo", adjust = TRUE)
+xts_ohlcv <- get(in_ohlcv)
+pvec <- xts(rowMeans(xts_ohlcv[, 2:4]), index(xts_ohlcv))
+volvec <- xts_ohlcv[, 5]
+xts_pvol <- merge(pvec, volvec)
+df <- fortify(xts_pvol)
+colnames(df) <- c("Date", "Price", "Volume")
+#--
+per_ema <- 3
+df$Price_smoothed <- EMA(df$Price, per_ema)
+df$Price_dt <- df$Price - df$Price_smoothed
+df$Price_dt_smoothed <- EMA(df$Price_dt, per_ema)
+df <- df[-c(1:(1 + per_ema)), ]
+#--
+min_price <- min(df$Price)
+max_price <- max(df$Price)
+bins <- seq(min_price, max_price, l = 144)
+n_bins <- length(bins)
+#--
+vol_interval <- c()
+mu_price_interval <- c()
+for(i in 2:n_bins){
+  price_interval <- c(bins[i - 1], bins[i])
+  # ind1 <- which(df$Price >= price_interval[1])
+  # ind2 <- which(df$Price < price_interval[2])
+  # ind1 %in% ind2
+  # intersect(ind1, ind2)
+  ind <- which(df$Price >= price_interval[1] & df$Price < price_interval[2])
+  vol_this_interval <- sum(df$Volume[ind])
+  vol_interval[i] <- vol_this_interval
+  mu_price_interval[i] <- mean(price_interval)
+}
+ordered_volBins <- vol_interval[order(vol_interval)]
+plot(log(ordered_volBins))
+df_VPOC <- data.frame(mu_Price_of_Bin = mu_price_interval, Vol_in_Bin = vol_interval)
+df_plot <- df_VPOC
+df_plot$lP <- log(df_plot$mu_Price_of_Bin)
+df_plot$lV <- log(df_plot$Vol_in_Bin)
+is.na(df_plot) <- sapply(df_plot, is.infinite)
+df_plot <- df_plot[-1, ]
+df_fit <- df_plot[!(is.infinite(df_plot$lV) | is.na(df_plot$lV)), ]
+pfit <- polyfit(df_fit$lP, df_fit$lV)
+pfit
+gg <- ggplot(df_plot, aes(x = lP, y = lV))
+gg <- gg + geom_point()
+gg <- gg + geom_abline(slope = pfit[1], intercept = pfit[2])
+gg
+#===========================
+# n_bins <- length(P_rev_per_output_SUP)
+# df_plotAR <- data.frame(xmin = P_rev_per_output_SUP[-n_bins], xmax = P_rev_per_output_SUP[-1])
+df_VPOCrect <- data.frame(ymin = bins[-n_bins], ymax = bins[-1])
+df_VPOCrect$Vol_in_bin <- df_VPOC$Vol_in_Bin[-1]
+df_plot <- df
+#df_plot$Date <- as.character(df_plot$Date) #as.Date(as.character(df_plot$Date), "%Y-%m-%d")
+df_plot$Date <- as.integer(df_plot$Date)
+gg <- ggplot()
+gg <- gg + geom_rect(data = df_VPOCrect, aes(xmin = -Inf, xmax = Inf,
+                                           ymin = ymin, ymax = ymax, fill = Vol_in_bin), alpha = 0.8)
+gg <- gg + scale_fill_gradient(low = "cyan", high = "magenta")
+gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Price_dt_smoothed))
+#gg <- gg + scale_color_manual(values=c("lightsalmon", "lightsalmon4"))
+gg <- gg + theme_bw()
+gg
+#===========================
+#rolling VPOC (use geom_raster)
+rolling_window <- 21
+for(j in 1:rolling_window){
+  df_this_window <- df[j:(j + rolling_window), ]
+vol_pinterval <- c()
+mu_pinterval <- c()
+for(i in 2:n_bins){
+  price_interval <- c(bins[i - 1], bins[i])
+  df_this <- subset(df, Price_dt >= price_interval[1] & Price_dt < price_interval[2])
+  vol_this_pinterval <- sum(df_this$Volume)
+  vol_interval[i] <-vol_this_interval
+  mu_price_interval[i] <- mean(price_interval)
+}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AdoptRate <- df_QS1$`Supply Market Participation` / (df_QS1$`Supply Market Participation` + df_QS0$`Supply Market Participation`)
+n_bins <- length(P_rev_per_output_SUP)
+df_plotAR <- data.frame(xmin = P_rev_per_output_SUP[-n_bins], xmax = P_rev_per_output_SUP[-1])
+df_plotAR$`Adoption\nRate` <- AdoptRate[-1]
+u <- df_QS1$`Supply (MT / day)`
+P_adoptRange_start <- df_QS1$`Root Price (lcu / MT)`[which(u > 0)][1]
+u <- df_QS0$`Supply (MT / day)`
+ind <- which(u > 1)
+P_adoptRange_stop <- df_QS0$`Root Price (lcu / MT)`[ind[length(ind)]]
+P_adoptRange <- c(P_adoptRange_start, P_adoptRange_stop)
+
+
+
+
+
+
+
+
+
+
+
+library(tidyquant)
+# Use FANG data set
+data("FANG") 
+
+# Get AAPL and AMZN Stock Prices
+AAPL <- tq_get("AAPL", get = "stock.prices", from = "2015-09-01", to = "2016-12-31")
+AMZN <- tq_get("AMZN", get = "stock.prices", from = "2000-01-01", to = "2016-12-31")
+end <- as_date("2016-12-31")
+
+AAPL %>%
+  ggplot(aes(x = date, y = close)) +
+  geom_line() +
+  labs(title = "AAPL Line Chart", y = "Closing Price", x = "") + 
+  theme_tq()
+
+AAPL %>%
+  ggplot(aes(x = date, y = close, open = open,
+             high = high, low = low, close = close)) +
+  geom_candlestick() +
+  geom_bbands(ma_fun = SMA, sd = 2, n = 20) +
+  labs(title = "AAPL Candlestick Chart", 
+       subtitle = "BBands with SMA Applied", 
+       y = "Closing Price", x = "") + 
+  coord_x_date(xlim = c(end - weeks(24), end),
+               ylim = c(100, 120)) + 
+  theme_tq()
