@@ -1,4 +1,4 @@
-setwd("D:/OneDrive - CGIAR/Documents")
+#setwd("D:/OneDrive - CGIAR/Documents")
 library(pracma)
 library(quantmod)
 library(WaveletComp)
@@ -111,20 +111,24 @@ min_price_dt_smoothed <- min(df$Price_dt_smoothed)
 max_price_dt_smoothed <- max(df$Price_dt_smoothed)
 bins_dt_smoothed <- seq(min_price_dt_smoothed, max_price_dt_smoothed, l = 144)
 n_bins_dt_smoothed <- length(bins_dt_smoothed)
-
 #===========================
 #rolling VPOC (use geom_raster)
-rolling_window <- 55
-min_price <- min(df$Price_dt)
-max_price <- max(df$Price_dt)
-bins <- seq(min_price, max_price, l = 13)
-list_df <- list()
-for(j in 1:rolling_window){
-  df_this_window <- df[j:(j + rolling_window), ]
+rolling_window <- 89
+in_ts_price <- df$Price_dt
+in_ts_volume <- df$Volume
+last_t <- nrow(df)
+
+for(t in (rolling_window + 1):last_t){
+  #t = (rolling_window + 1)
+  this_ts_price <- in_ts_price[(t - rolling_window):t]
+  this_ts_volume <- in_ts_volume[(t - rolling_window):t]
+  min_price <- min(this_ts_price)
+  max_price <- max(this_ts_price)
+  bins <- seq(min_price, max_price, l = round(rolling_window / 21))
   df_this_VPOC <- getVolBins(bins,
-                        ts_price = df_this_window$Price_dt,
-                        ts_volume = df_this_window$Volume,
-                        graph_on = F)
+                             this_ts_price,
+                             this_ts_volume,
+                             graph_on = F)
   list_df[[j]] <- df_this_VPOC
 }
 
