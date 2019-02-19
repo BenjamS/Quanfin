@@ -1,14 +1,15 @@
-#setwd("D:/OneDrive - CGIAR/Documents")
+setwd("D:/OneDrive - CGIAR/Documents")
 library(pracma)
 library(quantmod)
 library(WaveletComp)
 library(ggplot2)
+library(tidyverse)
 
 gtIDmat <- read.csv("GlobTrndsID.csv", stringsAsFactors = FALSE)
 gtIDmat <- gtIDmat[, 2:ncol(gtIDmat)]
 #gtIDmat<<-gtIDmat
 
-ind <- which(gtIDmat[, 1] == "NIB")
+ind <- which(gtIDmat[, 1] == "SPY")
 gtetf <- gtIDmat[ind, 1]
 fromdate <- "2016-01-01"; todate <- "2019-02-01"
 in_ohlcv <- getSymbols(gtetf, from = fromdate, to = todate, src = "yahoo", adjust = TRUE)
@@ -29,6 +30,7 @@ df <- df[-c(1:(1 + per_ema)), ]
 getVolBins <- function(bins, ts_price, ts_volume, graph_on = F){
   vol_interval <- c()
   mu_price_interval <- c()
+  n_bins <- length(bins)
   for(i in 2:n_bins){
     price_interval <- c(bins[i - 1], bins[i])
     ind <- which(ts_price >= price_interval[1] & ts_price < price_interval[2])
@@ -80,9 +82,8 @@ gg <- gg + scale_fill_gradient2(low = "cyan", mid = "khaki2", high = "magenta", 
 gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Price_smoothed))
 gg <- gg + theme_bw()
 gg
-gg1 <- gg
+#gg1 <- gg
 #-------------------------------------
-
 min_price <- min(df$Price_dt_smoothed)
 max_price <- max(df$Price_dt_smoothed)
 bins <- seq(min_price, max_price, l = 144)
@@ -107,37 +108,60 @@ gg <- gg + geom_hline(yintercept = mean(df_plot2$Price_dt_smoothed), color = "re
 gg <- gg + theme_bw()
 gg
 
-min_price_dt_smoothed <- min(df$Price_dt_smoothed)
-max_price_dt_smoothed <- max(df$Price_dt_smoothed)
-bins_dt_smoothed <- seq(min_price_dt_smoothed, max_price_dt_smoothed, l = 144)
-n_bins_dt_smoothed <- length(bins_dt_smoothed)
+# min_price_dt_smoothed <- min(df$Price_dt_smoothed)
+# max_price_dt_smoothed <- max(df$Price_dt_smoothed)
+# bins_dt_smoothed <- seq(min_price_dt_smoothed, max_price_dt_smoothed, l = 144)
+# n_bins_dt_smoothed <- length(bins_dt_smoothed)
 #===========================
 #rolling VPOC (use geom_raster)
-rolling_window <- 89
-in_ts_price <- df$Price_dt
+rolling_window <- 13
+in_ts_price <- df$Price_dt_smoothed
 in_ts_volume <- df$Volume
+min_price <- min(in_ts_price)
+max_price <- max(in_ts_price)
 last_t <- nrow(df)
-
+list_vol_in_bin <- list()
+u <- 0
 for(t in (rolling_window + 1):last_t){
   #t = (rolling_window + 1)
   this_ts_price <- in_ts_price[(t - rolling_window):t]
   this_ts_volume <- in_ts_volume[(t - rolling_window):t]
-  min_price <- min(this_ts_price)
-  max_price <- max(this_ts_price)
-  bins <- seq(min_price, max_price, l = round(rolling_window / 21))
+  bins <- seq(min_price, max_price, l = 55)
   df_this_VPOC <- getVolBins(bins,
                              this_ts_price,
                              this_ts_volume,
                              graph_on = F)
-  list_df[[j]] <- df_this_VPOC
+  u <- u + 1
+  list_vol_in_bin[[u]] <- df_this_VPOC$Vol_in_Bin
 }
 
+df_RollvolBins <- as.data.frame(do.call(cbind, list_vol_in_bin))
+df_RollvolBins <- df_RollvolBins[-1, ]
+#colnames(df_RollvolBins) <- df$Date[-c(1:rolling_window)]
+colnames(df_RollvolBins) <- 1:(nrow(df) - rolling_window)
+gathercols <- colnames(df_RollvolBins)
+df_RollvolBins$Price <- df_this_VPOC$mu_Price_of_Bin[-1]
+df_RollvolBins <- df_RollvolBins %>% gather_("Date", "Volume", gathercols)
+#df_RollvolBins$Date <- as.Date(df_RollvolBins$Date)
+class(df_RollvolBins$Date)
+df_RollvolBins$Date <- as.integer(df_RollvolBins$Date)
+#--
+#df_RollvolBins$Date <- as.Date(df_RollvolBins$Date)
+df_plot_ts <- df[-c(1:rolling_window), ]
+df_plot_ts$t <- as.integer(1:nrow(df_plot_ts))
+volume_thresh <- quantile(df_RollvolBins$Volume, probs = 0.95)
 
+# gg <- ggplot(df_plot_ts, aes(x = t, y = Price_dt))
+# gg <- gg + geom_line()
+# gg
 
-
-
-
-
+gg <- ggplot()
+gg <- gg + geom_raster(data = df_RollvolBins, aes(x = Date, y = Price, fill = Volume))
+gg <- gg + scale_fill_gradient2(low = "cyan", mid = "khaki2", high = "magenta", midpoint = volume_thresh)
+gg <- gg + geom_line(data = df_plot_ts, aes(x = t, y = Price_dt_smoothed))
+gg <- gg + theme_bw()
+#gg <- gg + theme(axis.text.x = element_blank())
+gg
 
 
 
