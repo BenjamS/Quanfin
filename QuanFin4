@@ -1,0 +1,145 @@
+library(tidyquant)
+library(ggthemes)
+source('~/getTsTrendInds.R')
+
+
+tq_exchange_options()
+tq_index_options()
+
+fromdate<-"2017-01-01"; todate <- "2019-01-01"
+
+this_guy <- c("NIB")
+tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#--
+df <- df_ohlcv[, c("date", "p")]
+df <- as.data.frame(df)
+o <- apply(df, 2, function(x) length(which(is.na(x))))
+table(o)
+#df[, -1] <- na.spline(df[, -1])
+per_ema <- 13
+#df_ema <- as.data.frame(apply(df[, -1], 2, EMA, per_ema))
+df$ema <- EMA(df$p, per_ema)
+df$dt <- df$p - df$ema
+
+gathercols <- colnames(df)[2:ncol(df)]
+df_plot <- df %>% gather_("Type", "Value", gathercols)
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
+df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
+
+gg <- ggplot()
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+
+#---------------------
+df$ema <- NULL
+in_df <- df
+outlist <- getTsTrendInds(in_df,
+                      thresh_pct_uptrend = 0.7,
+                      thresh_pct_dntrend = -0.7)
+df_upTrnds <- outlist[[1]]
+df_dnTrnds <- outlist[[2]]
+
+mu_p <- mean(df_x$p, na.rm = T)
+mu_p_dt <- 0#mean(df_x$p_dt, na.rm = T)
+df_plot_mean_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(mu_p, mu_p_dt))
+gg <- ggplot()
+# gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                              ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
+# gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "orange")
+gg <- gg + theme(legend.position = "none")
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+getVolBins <- function(bins, ts_price, ts_volume, graph_on = F){
+  vol_interval <- c()
+  mu_price_interval <- c()
+  for(i in 2:n_bins){
+    price_interval <- c(bins[i - 1], bins[i])
+    ind <- which(ts_price >= price_interval[1] & ts_price < price_interval[2])
+    vol_this_interval <- sum(ts_volume[ind])
+    vol_interval[i] <- vol_this_interval
+    mu_price_interval[i] <- mean(price_interval)
+  }
+  df_VPOC <- data.frame(mu_Price_of_Bin = mu_price_interval, Vol_in_Bin = vol_interval)
+  if(graph_on){
+    ordered_volBins <- vol_interval[order(vol_interval)]
+    plot(log(ordered_volBins))
+    df_plot <- df_VPOC
+    df_plot$lP <- log(df_plot$mu_Price_of_Bin)
+    df_plot$lV <- log(df_plot$Vol_in_Bin)
+    is.na(df_plot) <- sapply(df_plot, is.infinite)
+    df_plot <- df_plot[-1, ]
+    df_fit <- df_plot[!(is.infinite(df_plot$lV) | is.na(df_plot$lV)), ]
+    pfit <- polyfit(df_fit$lP, df_fit$lV)
+    pfit
+    gg <- ggplot(df_plot, aes(x = lP, y = lV))
+    gg <- gg + geom_point()
+    gg <- gg + geom_abline(slope = pfit[1], intercept = pfit[2])
+    gg
+    
+  }
+  return(df_VPOC)
+}
+#===========================
+
+fromdate<-"2018-01-01"; todate <- "2019-01-01"
+
+# "AUDUSD=x", "GBPUSD=x", "USDJPY=x",
+# "EURJPY=x", "USDCAD=x",
+this_guy <- "NIB"
+tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#--
+df_p <- df_ohlcv[, c("date", "p")]
+#--
+min_price <- min(df_p$p)
+max_price <- max(df_p$p)
+bins <- seq(min_price, max_price, l = 144)
+n_bins <- length(bins)
+df_VPOC <- getVolBins(bins, ts_price = df_p$p, ts_volume = df_ohlcv$volume, graph_on = T)
+df_VPOCrect <- data.frame(ymin = bins[-n_bins], ymax = bins[-1])
+df_VPOCrect$Vol_in_bin <- df_VPOC$Vol_in_Bin[-1]
+df_plot <- df_p
+#df_plot$date <- as.integer(df_plot$date)
+volume_thresh <- as.numeric(quantile(df_ohlcv$volume, probs = 0.9999999))
+#--
+gg <- ggplot()
+gg <- gg + geom_rect(data = df_VPOCrect, aes(xmin = -Inf, xmax = Inf,
+                                             ymin = ymin, ymax = ymax, fill = Vol_in_bin), alpha = 0.8)
+gg <- gg + scale_fill_gradient2(low = "cyan", mid = "khaki2", high = "magenta", midpoint = volume_thresh)
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = p))
+gg <- gg + theme_bw()
+gg
+gg1 <- gg
+#-------------------------------------
