@@ -1,0 +1,54 @@
+library(tidyquant)
+library(ggthemes)
+
+
+
+
+tq_exchange_options()
+tq_index_options()
+
+fromdate<-"2018-01-01"; todate <- "2019-01-01"
+
+# "AUDUSD=x", "GBPUSD=x", "USDJPY=x",
+# "EURJPY=x", "USDCAD=x",
+currency_pairs <- c("EURUSD=x")
+not_currency_pairs <- c("^VIX", "SPY", "WTI", "NIB")
+n_shift_guys <- length(not_currency_pairs)
+get_these_guys <- c(not_currency_pairs, currency_pairs)
+n_guys <- length(get_these_guys)
+
+tbl_ohlcv <- tq_get(get_these_guys, get = "stock.prices", from = fromdate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#--
+df_p <- df_ohlcv[, c("symbol", "date", "p")]
+df_p <- df_p %>% spread(symbol, p)
+df_p[, not_currency_pairs] <- rbind(df_p[-1, not_currency_pairs], rep(NA, n_shift_guys))
+df_p <- df_p[-nrow(df_p), ]
+#--
+df_p$x <- rowSums(is.na(df_p[2:ncol(df_p)]))
+ind_rm <- which(df_p$x == n_guys)
+df_p <- df_p[-ind_rm, ]
+df_p$x <- NULL
+#===============================
+datevec <- df_p$date
+df_p$date <- NULL
+#df_p[, c("EURUSD=x", "AUDUSD=x", "GBPUSD=x")] <- 1 / df_p[, c("EURUSD=x", "AUDUSD=x", "GBPUSD=x")]
+individ_vec <- colnames(df_p)
+df_p <- na.spline(df_p)
+mat_diff <- diff(as.matrix(df_p))
+datevec_cm <- datevec[-1]
+cormat <- cor(mat_diff)
+image(cormat)
+load_mat <- eigen(cormat)$vectors[, 1:3]
+df_plot <- as.data.frame(load_mat)
+colnames(df_plot)[1:ncol(df_plot)] <- paste("Contribution", 1:ncol(df_plot))
+df_plot$individuals <- individ_vec
+gg <- ggplot(df_plot, aes(x = individuals, y = `Contribution 1`))
+gg <- gg + geom_bar(stat = "identity")
+#gg <- gg + facet_wrap(~ Mode, nrow = floor(n / 2))
+gg <- gg + theme_economist()
+gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 0),
+                 axis.title.x = element_blank(),
+                 panel.spacing = unit(1.5, "lines"))
+gg
