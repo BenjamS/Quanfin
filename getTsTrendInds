@@ -1,0 +1,89 @@
+getTsTrendInds <- function(in_df, thresh_pct_uptrend = 0.7, thresh_pct_dntrend = -0.7){
+  # Captures index of sustained up and down trends of a time series
+  # by identifying periods of consecutive time steps in which slope
+  # (i.e. the detrended series) is positve (for up trends) 
+  # or negative (for down trends).
+  # in_df = data.frame(date = etc., p = numeric, dt = numeric)
+  # where dt equals the detrended series, usually made by subtracting a short period
+  # (eg. 3-13) ema from the raw ts. This is essentially the slope (first derivative)
+  # of the ts.
+  #=======================================================
+  #Initial capture based on slope crossings of the mean slope
+  ind_uptrnd <- which(in_df$dt > 0)
+  ind_dntrnd <- which(in_df$dt <= 0)
+  #---------------------
+  #Get trend start/finish points by taking differences
+  ind_upFin <- ind_dntrnd[which(diff(ind_dntrnd) != 1) + 1]
+  ind_upBeg <- ind_uptrnd[which(diff(ind_uptrnd) != 1) + 1]
+  ind_dnFin <- ind_upBeg
+  ind_dnBeg <- ind_upFin
+  #If necessary, remove start/finish points so that you have one finish point
+  #for every start point (i.e. a complete set)
+  n_upBeg <- length(ind_upBeg)
+  n_upFin <- length(ind_upFin)
+  n_upBeg_raw <- n_upBeg
+  n_upFin_raw <- n_upFin
+  n_dnBeg <- length(ind_dnBeg)
+  n_dnFin <- length(ind_dnFin)
+  n_dnBeg_raw <- n_dnBeg
+  n_dnFin_raw <- n_dnFin
+  if(ind_upBeg[1] > ind_upFin[1]){ind_upFin <- ind_upFin[-1]; n_upFin <- length(ind_upFin)}
+  if(ind_upBeg[n_upBeg] > ind_upFin[n_upFin]){ind_upBeg <- ind_upBeg[-n_upBeg]; n_upBeg <- length(ind_upBeg)}
+  if(sum(ind_upFin - ind_upBeg < 0) > 0){print("Problem with uptrends")}
+  if(ind_dnBeg[1] > ind_dnFin[1]){ind_dnFin <- ind_dnFin[-1]; n_dnFin <- length(ind_dnFin)}
+  if(ind_dnBeg[n_dnBeg] > ind_dnFin[n_dnFin]){ind_dnBeg <- ind_dnBeg[-n_dnBeg]; n_dnBeg <- length(ind_dnBeg)}
+  if(sum(ind_dnFin - ind_dnBeg < 0) > 0){print("Problem with downtrends")}
+  #=================================
+  #Uptrends
+  df_a <- in_df
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$UpStartDate <- NA
+  df_a$UpStartDate[ind_upBeg] <- as.character(df_a$date[ind_upBeg])
+  df_a <- subset(df_a, is.na(UpStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- in_df
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$UpStopDate <- NA
+  df_b$UpStopDate[ind_upFin] <- as.character(df_b$date[ind_upFin])
+  df_b <- subset(df_b, is.na(UpStopDate) != T)
+  df_b$Date <- NULL
+  #--
+  df_upTrends <- cbind(df_a, df_b)
+  #--
+  thresh_pct_uptrend <- 0
+  df_upTrends$Change <- df_upTrends$`Stop p` - df_upTrends$`Start p`
+  df_upTrends$`Pct. Change` <- 100 * df_upTrends$Change / df_upTrends$`Start p`
+  df_upTrends$Duration <- ind_upFin - ind_upBeg
+  df_upTrends$`Pct. Change/Time` <- df_upTrends$`Pct. Change` / df_upTrends$Duration
+  df_upTrends$`False uptrend` <- ifelse(df_upTrends$`Pct. Change` < thresh_pct_uptrend, 1, 0)
+  df_upTrends$`True uptrend` <- ifelse(df_upTrends$`Pct. Change` < thresh_pct_uptrend, 0, 1)
+  df_upTrends$UpStartDate <- as.Date(df_upTrends$UpStartDate)
+  df_upTrends$UpStopDate <- as.Date(df_upTrends$UpStopDate)
+  #----------------------
+  #Downtrends
+  df_a <- in_df
+  colnames(df_a)[2:ncol(df_a)] <- paste("Start", colnames(df_a)[2:ncol(df_a)])
+  df_a$DnStartDate <- NA
+  df_a$DnStartDate[ind_dnBeg] <- as.character(df_a$date[ind_dnBeg])
+  df_a <- subset(df_a, is.na(DnStartDate) != T)
+  df_a$Date <- NULL
+  df_b <- in_df
+  colnames(df_b)[2:ncol(df_b)] <- paste("Stop", colnames(df_b)[2:ncol(df_b)])
+  df_b$DnStopDate <- NA
+  df_b$DnStopDate[ind_dnFin] <- as.character(df_b$date[ind_dnFin])
+  df_b <- subset(df_b, is.na(DnStopDate) != T)
+  df_b$Date <- NULL
+  #--
+  df_dnTrends <- cbind(df_a, df_b)
+  #--
+  df_dnTrends$Change <- df_dnTrends$`Stop p` - df_dnTrends$`Start p`
+  df_dnTrends$`Pct. Change` <- 100 * df_dnTrends$Change / df_dnTrends$`Start p`
+  df_dnTrends$Duration <- ind_dnFin - ind_dnBeg
+  df_dnTrends$`Pct. Change/Time` <- df_dnTrends$`Pct. Change` / df_dnTrends$Duration
+  df_dnTrends$`False downtrend` <- ifelse(df_dnTrends$`Pct. Change` > thresh_pct_dntrend, 1, 0)
+  df_dnTrends$DnStartDate <- as.Date(df_dnTrends$DnStartDate)
+  df_dnTrends$DnStopDate <- as.Date(df_dnTrends$DnStopDate)
+  #=======================================================
+  outlist <- list(df_upTrends, df_dnTrends)
+  return(outlist)
+}
