@@ -1,12 +1,15 @@
 library(tidyquant)
 library(ggthemes)
+library(WaveletComp)
+library(Hmisc)
+library(corrplot)
 source('~/getTsTrendInds.R')
 
 
 tq_exchange_options()
 tq_index_options()
 
-fromdate<-"2017-01-01"; todate <- "2019-01-01"
+fromdate<-"2010-01-01"; todate <- Sys.Date() #todate <- "2019-01-01"
 
 this_guy <- c("NIB")
 tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
@@ -46,7 +49,7 @@ outlist <- getTsTrendInds(in_df,
 df_upTrnds <- outlist[[1]]
 df_dnTrnds <- outlist[[2]]
 
-mu_p <- mean(df_x$p, na.rm = T)
+mu_p <- mean(df$p, na.rm = T)
 mu_p_dt <- 0#mean(df_x$p_dt, na.rm = T)
 df_plot_mean_line <- data.frame(Type = c("time series", "detrended"),
                                 mu_line = c(mu_p, mu_p_dt))
@@ -54,14 +57,279 @@ gg <- ggplot()
 # gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
 #                                              ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
 # gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
-gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
                                              ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
 gg <- gg + scale_fill_manual(values = c("magenta", "green"))
-gg <- gg + geom_line(data = df_plot, aes(x = Date, y = Value, color = Subtype))
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
 gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
 gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "orange")
 gg <- gg + theme(legend.position = "none")
 gg
+
+#========================================================================
+# start_money <- 100
+# roundtrip_fee <- 18
+# money <- start_money
+# money_vec <- c()
+# entry_price <- NULL
+# for(i in 1:nrow(df_upTrnds)){
+#   if(df_upTrnds$`True uptrend`[i] == 1){
+#     if(is.null(entry_price)){
+#       money <- money * df_upTrnds$`Pct. Change`[i] - roundtrip_fee
+#     }else{
+#       exit_price <- df_upTrnds$`Stop p`[i]
+#       pct_chng <- (exit_price - entry_price) / entry_price
+#       money_hypoth <- money * pct_chng - roundtrip_fee
+#       if(money_hypoth > money){
+#         money <- money_hypoth
+#       }
+#     }
+#   }else{
+#     if(is.null(entry_price)){
+#       entry_price <- df_upTrnds$`Start p`[i]
+#     }else{
+#       
+#     }
+#     
+#     
+#   }
+#   
+#   money_vec[i] <- money
+# }
+# money
+# plot(money_vec)
+
+#========================================================================
+# Detect periodicity
+my.w <- analyze.wavelet(df[ -c(1:(per_ema + 1)),], "dt",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+ind_critPoints <- findPeaks(df_periodogram$power)
+critPoints <- df_periodogram$period[ind_critPoints]
+critPoints
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = critPoints, color = "cyan", size = 1.5)
+gg
+
+x <- 1:100
+plot(x, sin(pi * 42 / (2) * x), type = "l")
+
+#========================================================================
+
+df_ret <- df %>%
+#  group_by(symbol) %>%
+  tq_transmute(select     = p, 
+               mutate_fun = periodReturn, 
+               period     = "quarterly", 
+               type       = "arithmetic")
+
+
+gg <- ggplot(df_ret, aes(date, quarterly.returns))
+gg <- gg + geom_line()
+gg
+
+df_ret$quarterly.returns <- scale(df_ret$quarterly.returns)
+
+
+my.w <- analyze.wavelet(df_ret, "quarterly.returns",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+ind_critPoints <- findPeaks(df_periodogram$power)
+critPoints <- df_periodogram$period[ind_critPoints]
+critPoints
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+#gg <- gg + geom_vline(xintercept = critPoints, color = "cyan", size = 1.5)
+gg
+
+
+df_ret$q <- quarter(df_ret$date)
+df_ret$year <- year(df_ret$date)
+df_ret$date <- NULL
+df_ret <- df_ret %>% spread(q, quarterly.returns)
+colMeans(df_ret[,-1], na.rm = T)
+
+
+image(t(as.matrix(df_ret[, -1])))
+PCA(df_ret[, -1])
+
+
+rcorr_out <- rcorr(as.matrix(df_ret[-nrow(df_ret), -1]))
+cormat <- rcorr_out$r
+pmat <- rcorr_out$P
+#corrplot(cormat_econ, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+corrplot(cormat, type="upper", order="hclust", p.mat = pmat, sig.level = 0.05, insig = "blank", tl.col = "black", tl.srt = 45)
+
+cormat <- cor(as.matrix(df_ret[-nrow(df_ret), -1]))
+image(cormat)
+
+
+
+
+
+
+
+df_quart <- df
+df_quart$p <- NULL
+df_quart <- df_quart %>%
+#  group_by(symbol) %>%
+  tq_transmute(select     = dt, 
+               mutate_fun = to.period, 
+               period     = "month")
+df_quart$q <- month(df_quart$date)
+df_quart$year <- year(df_quart$date)
+df_quart$date <- NULL
+df_quart <- df_quart %>% spread(q, dt)
+
+
+rcorr_out <- rcorr(as.matrix(df_quart[, -1]))
+cormat_econ <- rcorr_out$r
+pmat_econ <- rcorr_out$P
+#corrplot(cormat_econ, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level = 0.01, insig = "blank", tl.col = "black", tl.srt = 45)
+
+library(FactoMineR)
+PCA(df_quart[, -1])
+image(t(as.matrix(df_quart[,-1])))
+
+#========================================================================
+these_exchangeRates <- c("EUR/USD", "USD/JPY", "AUD/USD", "GBP/USD", "USD/CHF", "USD/CAD")
+df_ohlcv <- tq_get(these_exchangeRates, 
+                  get = "exchange.rates", 
+                  from = fromdate)
+df <- df_ohlcv
+df <- as.data.frame(df)
+o <- apply(df, 2, function(x) length(which(is.na(x))))
+table(o)
+per_ema <- 21
+df$ema <- EMA(df$exchange.rate, per_ema)
+df$dt <- df$exchange.rate - df$ema
+
+list_df <- list()
+list_per <- list()
+for(i in 1:length(these_exchangeRates)){
+  this_exchangeRate <- these_exchangeRates[i]
+  print(this_exchangeRate)
+  this_df <- subset(df, symbol == this_exchangeRate)
+  my.w <- analyze.wavelet(this_df[ -c(1:(per_ema + 1)),], "dt",
+                          loess.span = 0,
+                          dt = 1, dj = 1/250,
+                          lowerPeriod = 2^3,
+                          upperPeriod = 2^9,
+                          make.pval = TRUE, n.sim = 10)
+  
+  df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+  ind_critPoints <- findPeaks(df_periodogram$power)
+  critPoints <- df_periodogram$period[ind_critPoints]
+  print(critPoints)
+  df_periodogram$symbol <- this_exchangeRate
+  list_df[[i]] <- df_periodogram
+  list_per[[i]] <- critPoints
+  # gg <- ggplot(df_periodogram, aes(x = period, y = power))
+  # gg <- gg + geom_line()
+  # gg
+  
+  
+}
+df_periodograms <- do.call(rbind, list_df)
+
+gg <- ggplot(df_periodograms, aes(x = period, y = power, group = symbol, color = symbol))
+gg <- gg + geom_line()
+gg
+
+
+n_max_periods <- 2
+pval_thresh <- 0.01
+per_vec <- list_per[[1]]
+df_plot <- subset(df[, c("symbol", "date", "dt")], symbol == "EUR/USD")
+df_plot <- df_plot[-c(1:(per_ema + 1)),]
+n_t <- nrow(df_plot)
+regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
+this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+ts <- df_plot$dt
+linmod <- lm(this_formula)
+summod <- summary(linmod)
+summod
+pvals <- as.numeric(summod$coefficients[, 4])
+ind_rm <- which(pvals > pval_thresh)
+round <- 0
+while(length(ind_rm) > 0){
+  round <- round + 1
+  print(paste("round ", round))
+  if(round == 7){
+    print("Too many rounds, aborting.")
+    break
+  }
+  regrsrs_char <- strsplit(as.character(regrsrs), " \\+ ")[[1]]
+  regrsrs_char <- regrsrs_char[-ind_rm]
+  regrsrs <- paste(regrsrs_char, collapse = " + ")
+  this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+  linmod <- lm(this_formula)
+  #---------------------
+  summod <- summary(linmod)
+  print(summod)
+  pvals <- as.numeric(summod$coefficients[, 4])
+  ind_rm <- which(pvals > pval_thresh)
+}
+
+df_plot$yhat <- fitted(linmod)
+
+df_plot <- df_plot %>% gather(type, value, dt:yhat)
+gg <- ggplot(df_plot, aes(x = date, y = value, group = type, color = type))
+gg <- gg + geom_line()
+gg
+
+
+# source('~/fitWave.R', echo=TRUE)
+# df_plot <- subset(df[, c("symbol", "date", "dt")], symbol == "EUR/USD")
+# df_plot <- df_plot[-c(1:(per_ema + 1)),]
+# n_t <- nrow(df_plot)
+# ts = df_plot$dt
+# t = 1:n_t
+# fitWave(ts, t, t_proj = NULL, q_prob = 0.99,
+#         pval_thresh = 0.01, nper_fit = NULL, quietly = T)
+# 
+
+
+
+
+
+df_mod <- df[, c("date", "symbol", "dt")]
+df_mod <- df_mod %>% spread(symbol, dt)
+
+regrsrs <- paste0("`", colnames(df_mod)[-c(1, 3)], "`", collapse = " + ")
+this_formula <- as.formula(paste("`EUR/USD` ~ -1 + ", regrsrs)[1])
+linmod <- lm(this_formula, df_mod)
+summary(linmod)
+
+rcorr_out <- rcorr(as.matrix(df_mod[, -1]))
+cormat_econ <- rcorr_out$r
+pmat_econ <- rcorr_out$P
+#corrplot(cormat_econ, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level = 0.01, insig = "blank", tl.col = "black", tl.srt = 45)
+
+
+#========================================================================
+
+
+
 
 
 
