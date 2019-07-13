@@ -6,12 +6,60 @@ library(corrplot)
 source('~/getTsTrendInds.R')
 
 
+fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead = 30){
+  n_t <- length(ts)
+  t <- 1:n_t
+  regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
+  this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+  linmod <- lm(this_formula)
+  summod <- summary(linmod)
+  #summod
+  pvals <- as.numeric(summod$coefficients[, 4])
+  ind_rm <- which(pvals > pval_thresh)
+  round <- 0
+  while(length(ind_rm) > 0){
+    round <- round + 1
+    print(paste("round ", round))
+    if(round == 7){
+      print("Too many rounds, aborting.")
+      break
+    }
+    regrsrs_char <- strsplit(as.character(regrsrs), " \\+ ")[[1]]
+    regrsrs_char <- regrsrs_char[-ind_rm]
+    regrsrs <- paste(regrsrs_char, collapse = " + ")
+    this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+    linmod <- lm(this_formula)
+    #---------------------
+    summod <- summary(linmod)
+    #print(summod)
+    pvals <- as.numeric(summod$coefficients[, 4])
+    ind_rm <- which(pvals > pval_thresh)
+  }
+  fitted_wave <- fitted(linmod)
+  
+  t <- (n_t + 1):(n_t + n_lookAhead)
+  regrsrs_fut <- names(linmod$coefficients)
+  #regrsrs_fut <- gsub("t", "t_fut", regrsrs_fut)
+  list_fut <- list()
+  for(i in 1:length(regrsrs_fut)){
+    list_fut[[i]] <- eval(parse(text = regrsrs_fut[i]))
+  }
+  df_fut <- as.data.frame(do.call(cbind, list_fut))
+  predict_wave <- predict(linmod, df_fut, interval = "prediction")
+  list_out <- list(fitted_wave, predict_wave)
+  print(summod)
+  return(list_out)
+}
+#========================================================================
+
 tq_exchange_options()
 tq_index_options()
 
-fromdate<-"2010-01-01"; todate <- Sys.Date() #todate <- "2019-01-01"
+fromdate<-"2013-01-01"; todate <- Sys.Date() #todate <- "2019-01-01"
 
-this_guy <- c("NIB")
+this_guy <- c("SPY")
 tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
 df_ohlcv <- as.data.frame(tbl_ohlcv)
 df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
@@ -23,6 +71,7 @@ table(o)
 #df[, -1] <- na.spline(df[, -1])
 per_ema <- 13
 #df_ema <- as.data.frame(apply(df[, -1], 2, EMA, per_ema))
+#df$p <- log(df$p)
 df$ema <- EMA(df$p, per_ema)
 df$dt <- df$p - df$ema
 
@@ -41,8 +90,8 @@ gg <- gg + theme(legend.position = "none")
 gg
 
 #---------------------
-df$ema <- NULL
 in_df <- df
+in_df$ema <- NULL
 outlist <- getTsTrendInds(in_df,
                       thresh_pct_uptrend = 0.7,
                       thresh_pct_dntrend = -0.7)
@@ -67,41 +116,10 @@ gg <- gg + theme(legend.position = "none")
 gg
 
 #========================================================================
-# start_money <- 100
-# roundtrip_fee <- 18
-# money <- start_money
-# money_vec <- c()
-# entry_price <- NULL
-# for(i in 1:nrow(df_upTrnds)){
-#   if(df_upTrnds$`True uptrend`[i] == 1){
-#     if(is.null(entry_price)){
-#       money <- money * df_upTrnds$`Pct. Change`[i] - roundtrip_fee
-#     }else{
-#       exit_price <- df_upTrnds$`Stop p`[i]
-#       pct_chng <- (exit_price - entry_price) / entry_price
-#       money_hypoth <- money * pct_chng - roundtrip_fee
-#       if(money_hypoth > money){
-#         money <- money_hypoth
-#       }
-#     }
-#   }else{
-#     if(is.null(entry_price)){
-#       entry_price <- df_upTrnds$`Start p`[i]
-#     }else{
-#       
-#     }
-#     
-#     
-#   }
-#   
-#   money_vec[i] <- money
-# }
-# money
-# plot(money_vec)
-
-#========================================================================
 # Detect periodicity
-my.w <- analyze.wavelet(df[ -c(1:(per_ema + 1)),], "dt",
+df_wave <- df[ -c(1:(per_ema + 1)),]
+#df_wave$dt <- scale(df_wave$dt)
+my.w <- analyze.wavelet(df_wave, "dt",
                         loess.span = 0,
                         dt = 1, dj = 1/250,
                         lowerPeriod = 2^3,
@@ -113,120 +131,172 @@ wt.image(my.w, color.key = "quantile", n.levels = 250,
 # x.rec <- my.rec$series$x.r  # x: name of original series
 df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
 ind_critPoints <- findPeaks(df_periodogram$power)
-critPoints <- df_periodogram$period[ind_critPoints]
-critPoints
+critPers <- df_periodogram$period[ind_critPoints]
+critPers
 gg <- ggplot(df_periodogram, aes(x = period, y = power))
 gg <- gg + geom_line()
 gg <- gg + geom_vline(xintercept = critPoints, color = "cyan", size = 1.5)
 gg
 
-x <- 1:100
-plot(x, sin(pi * 42 / (2) * x), type = "l")
+critPwrs <- df_periodogram$power[ind_critPoints]
+ind_order <- order(critPwrs, decreasing = T)
+per_vec <- critPers[ind_order]
+n_lookAhead = 377
+ind_fit <- 1:(nrow(df_wave) - n_lookAhead)
+ind_test <- setdiff(1:nrow(df_wave), ind_fit)
+ts <- df_wave$dt[ind_fit]
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 6, pval_thresh = 0.01, n_lookAhead)
+yhat <- out_fitWave[[1]]
+ypredict <- out_fitWave[[2]]
+
+
+df_wave$yhat <- c(yhat, ypredict[, 1])
+df_wave$set <- NA
+df_wave$set[ind_fit] <- "fit"
+df_wave$set[ind_test] <- "test"
+
+df_plot <- df_wave
+df_plot$dt <- NULL
+df_plot <- df_plot %>% gather(Type, Value, p:yhat)
+
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Subtype[which(df_plot$Type == "yhat")] <- "yhat"
+df_plot$Type[which(df_plot$Type %in% c("p", "ema"))] <- "time series"
+df_plot$Type[which(df_plot$Type %in% c("dt", "yhat"))] <- "detrended"
+#df_plot <- df_plot[800:nrow(df_plot), ]
+
+# df_rect <- data.frame(start_date = c(df_plot$date[1], df_plot$date[ind_test[1]]),
+#                       stop_date = c(df_plot$date[ind_fit[length(ind_fit)]], df_plot$date[ind_test[length(ind_test)]]),
+#                       set = c("fit", "train"))
+# gg <- gg + geom_rect(data = df_rect, aes(xmin = start_date, xmax = stop_date,
+#                                          ymin = -Inf, ymax = Inf, fill = factor(set)), alpha = 0.7)
+
+df_plot_zero_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(NA, 0))
+
+gg <- ggplot()
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype), lwd = 1)
+gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1.1)
+gg <- gg + geom_hline(data = df_plot_zero_line, aes(yintercept = mu_line))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+# gg <- ggplot()
+# # gg <- gg + geom_rect(data = df_upTrends, aes(xmin = UpStartDate, xmax = UpStopDate,
+# #                                              ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
+# # gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+# gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
+# #gg <- gg + geom_ribbon(data = df_plot, aes(x = date, ymin = lwr, ymax = upr))
+# gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+# gg <- gg + theme(legend.position = "none")
+# gg
+
+
+
+
+
+# date_fut <- as.Date((Sys.Date() + 1):(Sys.Date() + n_lookAhead * 2))
+# date_fut <- date_fut[!weekdays(date_fut) %in% c("Saturday", "Sunday")]
+# date_fut <- date_fut[1:n_lookAhead]
+# #length(date_fut)
+# NA_vec <- rep(NA, n_lookAhead)
+# # df_add <- data.frame(date = date_fut, p = NA_vec, ema = NA_vec, dt = NA_vec, yhat = df_pred$fit, lwr = df_pred$lwr, upr = df_pred$upr)
+# # df_wave$lwr <- NA
+# # df_wave$upr <- NA
+# df_add <- data.frame(date = date_fut, p = NA_vec, ema = NA_vec, dt = NA_vec, yhat = df_pred$fit)
+# df_plot <- rbind(df_wave, df_add)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #========================================================================
 
-df_ret <- df %>%
-#  group_by(symbol) %>%
-  tq_transmute(select     = p, 
-               mutate_fun = periodReturn, 
-               period     = "quarterly", 
-               type       = "arithmetic")
-
-
-gg <- ggplot(df_ret, aes(date, quarterly.returns))
-gg <- gg + geom_line()
-gg
-
-df_ret$quarterly.returns <- scale(df_ret$quarterly.returns)
-
-
-my.w <- analyze.wavelet(df_ret, "quarterly.returns",
-                        loess.span = 0,
-                        dt = 1, dj = 1/250,
-                        lowerPeriod = 2^3,
-                        upperPeriod = 2^9,
-                        make.pval = TRUE, n.sim = 10)
-wt.image(my.w, color.key = "quantile", n.levels = 250,
-         legend.params = list(lab = "wavelet power levels", mar = 4.7))
-df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
-ind_critPoints <- findPeaks(df_periodogram$power)
-critPoints <- df_periodogram$period[ind_critPoints]
-critPoints
-gg <- ggplot(df_periodogram, aes(x = period, y = power))
-gg <- gg + geom_line()
-#gg <- gg + geom_vline(xintercept = critPoints, color = "cyan", size = 1.5)
-gg
-
-
-df_ret$q <- quarter(df_ret$date)
-df_ret$year <- year(df_ret$date)
-df_ret$date <- NULL
-df_ret <- df_ret %>% spread(q, quarterly.returns)
-colMeans(df_ret[,-1], na.rm = T)
-
-
-image(t(as.matrix(df_ret[, -1])))
-PCA(df_ret[, -1])
-
-
-rcorr_out <- rcorr(as.matrix(df_ret[-nrow(df_ret), -1]))
-cormat <- rcorr_out$r
-pmat <- rcorr_out$P
-#corrplot(cormat_econ, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
-corrplot(cormat, type="upper", order="hclust", p.mat = pmat, sig.level = 0.05, insig = "blank", tl.col = "black", tl.srt = 45)
-
-cormat <- cor(as.matrix(df_ret[-nrow(df_ret), -1]))
-image(cormat)
 
 
 
 
 
 
-
-df_quart <- df
-df_quart$p <- NULL
-df_quart <- df_quart %>%
-#  group_by(symbol) %>%
-  tq_transmute(select     = dt, 
-               mutate_fun = to.period, 
-               period     = "month")
-df_quart$q <- month(df_quart$date)
-df_quart$year <- year(df_quart$date)
-df_quart$date <- NULL
-df_quart <- df_quart %>% spread(q, dt)
-
-
-rcorr_out <- rcorr(as.matrix(df_quart[, -1]))
-cormat_econ <- rcorr_out$r
-pmat_econ <- rcorr_out$P
-#corrplot(cormat_econ, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
-corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level = 0.01, insig = "blank", tl.col = "black", tl.srt = 45)
-
-library(FactoMineR)
-PCA(df_quart[, -1])
-image(t(as.matrix(df_quart[,-1])))
-
-#========================================================================
-these_exchangeRates <- c("EUR/USD", "USD/JPY", "AUD/USD", "GBP/USD", "USD/CHF", "USD/CAD")
-df_ohlcv <- tq_get(these_exchangeRates, 
-                  get = "exchange.rates", 
-                  from = fromdate)
-df <- df_ohlcv
-df <- as.data.frame(df)
+# these_exchangeRates <- c("EUR/USD", "USD/JPY", "AUD/USD", "GBP/USD", "USD/CHF", "USD/CAD")
+# df_ohlcv <- tq_get(these_exchangeRates, 
+#                   get = "exchange.rates", 
+#                   from = Sys.Date() - days(180))
+fromdate<-"2017-01-01"; todate <- Sys.Date() #todate <- "2019-01-01"
+currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
+                    "GBPUSD=X", "AUDUSD=X", "INR=X")
+tbl_ohlcv <- tq_get(currency_symbs, 
+                   get = "stock.prices", 
+                   from = fromdate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+df_ohlcv$p <- rowSums(df_ohlcv[, c(4:6)]) / 3
+#--
+df <- df_ohlcv[, c("symbol", "date", "p")]
 o <- apply(df, 2, function(x) length(which(is.na(x))))
 table(o)
-per_ema <- 21
-df$ema <- EMA(df$exchange.rate, per_ema)
-df$dt <- df$exchange.rate - df$ema
+df <- as.data.frame(df %>% group_by(symbol) %>% mutate(p = na.approx(p)))
+o <- apply(df, 2, function(x) length(which(is.na(x))))
+table(o)
+
+per_ema <- 13
+df <- as.data.frame(df %>% group_by(symbol) %>% mutate(dt = p - EMA(p, per_ema)))
 
 list_df <- list()
 list_per <- list()
-for(i in 1:length(these_exchangeRates)){
-  this_exchangeRate <- these_exchangeRates[i]
+for(i in 1:length(currency_symbs)){
+  this_exchangeRate <- currency_symbs[i]
   print(this_exchangeRate)
   this_df <- subset(df, symbol == this_exchangeRate)
-  my.w <- analyze.wavelet(this_df[ -c(1:(per_ema + 1)),], "dt",
+  my.w <- analyze.wavelet(this_df[ -c(1:(per_ema - 1)),], "dt",
                           loess.span = 0,
                           dt = 1, dj = 1/250,
                           lowerPeriod = 2^3,
@@ -251,49 +321,251 @@ df_periodograms <- do.call(rbind, list_df)
 gg <- ggplot(df_periodograms, aes(x = period, y = power, group = symbol, color = symbol))
 gg <- gg + geom_line()
 gg
+#------------------------------------------------------------------------
+df_pca <- df[, c("date", "symbol", "dt")] %>% spread(symbol, dt)
+date_vec <- df_pca$date[-c(1:(per_ema - 1))]
+mat_in <- as.matrix(df_pca[-c(1:(per_ema - 1)), -1])
+#--Correlation matrix
+rcorr_out <- rcorr(mat_in)
+cormat <- rcorr_out$r
+pmat <- rcorr_out$P
+corrplot(cormat, type="upper", order="hclust", p.mat = pmat, sig.level = 0.01, insig = "blank", tl.col = "black", tl.srt = 45)
+#--PCA
+library(FactoMineR)
+library(factoextra)
+mat_in <- scale(mat_in)
+col_order <- colnames(mat_in)
+n_ts <- ncol(mat_in)
+row.names(mat_in) <- date_vec
+res <- PCA(mat_in)
+#--Extraction of signals (main PCs)
+lam_cor <- as.data.frame(res$eig)$eigenvalue
+lamcor_max <- max(lam_cor)
+N_t <- nrow(mat_in)
+N_c <- ncol(mat_in)
+Q <- N_t / N_c
+s_sq <- 1 - lamcor_max / N_c
+#s_sq <- 1
+lamrand_max <- s_sq * (1 + 1 / Q + 2 / sqrt(Q))
+lamrand_min <- s_sq * (1 + 1 / Q - 2 / sqrt(Q))
+lam <- seq(lamrand_min, lamrand_max, 0.001)
+dens_rand <- Q / (2 * pi * s_sq) * sqrt((lamrand_max - lam) * (lam - lamrand_min)) / lam
+df_e <- data.frame(eigenvalues = lam_cor)
+gg <- ggplot()
+gg <- gg + geom_density(data = df_e, aes(x = eigenvalues, color = "Correlation Matrix"), lwd = 1.1)
+gg <- gg + geom_line(data = data.frame(x = lam, y = dens_rand), aes(x = x, y = y, color = "Random matrix"), lwd = 1.1)
+gg <- gg + scale_colour_manual(name = "Eigenvalue density", 
+                               values = c(`Correlation Matrix` = "blue", `Random matrix` = "orange"))
+gg
+mat_eigvecs <- res$var$coord
+ind_deviating_from_noise <- which(lam_cor > (lamrand_max + 5 * 10^-1))
+lam_signals <- lam_cor[ind_deviating_from_noise]
+n_signals <- length(lam_signals)
+print(paste("Number of signals: ", n_signals))
+# Set sign of eigenvectors such that they
+# best conform to the input time series
+mat_PC_signals <- mat_eigvecs[, ind_deviating_from_noise]
+mat_signals_ts <- mat_in %*% mat_PC_signals
+if(n_signals == 1){
+  mat_signals_ts <- mat_signals_ts * 1 / lam_signals
+}else{
+  mat_signals_ts <- mat_signals_ts %*% diag(1 / lam_signals)
+  
+}
+ts_avg <- rowMeans(mat_in)
+#ts_avg[1]
 
+if(n_signals == 1){
+  sse <- sum((mat_signals_ts - ts_avg)^2)
+  sse_neg <- sum((-mat_signals_ts - ts_avg)^2)
+  sse_vec <- c(sse, sse_neg)
+  if(which(sse_vec == min(sse_vec)) == 2){
+    mat_PC_signals <- -mat_PC_signals
+  }
+  lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts, x = ts_avg))
+  sum_lm <- summary(lm_out)
+  param <- sum_lm$coefficients[2]
+  mat_signals_ts <- 1 / param * mat_signals_ts
+  mat_PC_signals <- 1 / param * mat_PC_signals
+  
+}else{
+  for(i in 1:n_signals){
+    sse <- sum((mat_signals_ts[, i] - ts_avg)^2)
+    sse_neg <- sum((-mat_signals_ts[, i] - ts_avg)^2)
+    sse_vec <- c(sse, sse_neg)
+    if(which(sse_vec == min(sse_vec)) == 2){
+      mat_PC_signals[, i] <- -mat_PC_signals[, i]
+    }
+    lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts[, i], x = ts_avg))
+    sum_lm <- summary(lm_out)
+    param <- sum_lm$coefficients[2]
+    mat_signals_ts[, i] <- 1 / param * mat_signals_ts[, i]
+    mat_PC_signals[, i] <- 1 / param * mat_PC_signals[, i]
+    
+  }
+  
+}
+
+#------------------------------------------------------------
+df_plot <- data.frame(Indicator = col_order, mat_PC_signals)
+signal_id <- paste("Signal", c(1:n_signals))
+colnames(df_plot)[2:(n_signals + 1)] <- signal_id
+gathercols <- as.character(signal_id)
+df_plot <- gather_(df_plot, "Signal", "Loading", gathercols)
+gg <- ggplot(df_plot, aes(x = Indicator, y = Loading))
+gg <- gg + geom_bar(stat = "identity", position = "dodge")
+gg <- gg + facet_wrap(~ Signal, nrow = 1)
+#gg <- gg + labs(title = )
+gg <- gg + theme(axis.text.y = element_text(face = "bold", size = 13),
+                 axis.text.x = element_text(face = "bold", size = 11),
+                 axis.title.y = element_text(face = "bold", size = 11),
+                 axis.title.x = element_text(face = "bold", size = 11))
+gg <- gg + coord_equal()
+# if(N_c <= 50){
+#   gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
+#                    axis.title.y = element_blank())
+# }else{
+#   gg <- gg + theme(axis.text.x = element_blank(),
+#                    axis.title.y = element_blank())
+# }
+gg <- gg + coord_flip()
+gg
+#------------------------------------------------------------------------
+this_symbol <- "EURUSD=X"
+this_df_periodogram <- subset(df_periodograms, symbol == this_symbol)
+gg <- ggplot(this_df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg
+
+ind_critPoints <- findPeaks(this_df_periodogram$power)
+critPers <- this_df_periodogram$period[ind_critPoints]
+
+
+critPwrs <- this_df_periodogram$power[ind_critPoints]
+ind_order <- order(critPwrs, decreasing = T)
+per_vec <- critPers[ind_order]
+per_vec
+n_lookAhead = 200
+this_df <- subset(df, symbol == this_symbol)
+df_wave <- this_df[-c(1:(per_ema - 1)), ]
+n_obs <- nrow(df_wave)
+ind_fit <- 1:(n_obs - n_lookAhead)
+ind_test <- setdiff(1:n_obs, ind_fit)
+ts <- df_wave$dt[ind_fit]
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 3, pval_thresh = 0.01, n_lookAhead)
+yhat <- out_fitWave[[1]]
+ypredict <- out_fitWave[[2]]
+
+
+df_wave$yhat <- c(yhat, ypredict[, 1])
+df_wave$set <- NA
+df_wave$set[ind_fit] <- "fit"
+df_wave$set[ind_test] <- "test"
+
+df_plot <- df_wave
+#df_plot$dt <- NULL
+df_plot <- df_plot %>% gather(Type, Value, p:yhat)
+
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Subtype[which(df_plot$Type == "yhat")] <- "yhat"
+df_plot$Type[which(df_plot$Type %in% c("p", "ema"))] <- "time series"
+df_plot$Type[which(df_plot$Type %in% c("dt", "yhat"))] <- "detrended"
+#df_plot <- df_plot[800:nrow(df_plot), ]
+
+# df_rect <- data.frame(start_date = c(df_plot$date[1], df_plot$date[ind_test[1]]),
+#                       stop_date = c(df_plot$date[ind_fit[length(ind_fit)]], df_plot$date[ind_test[length(ind_test)]]),
+#                       set = c("fit", "train"))
+# gg <- gg + geom_rect(data = df_rect, aes(xmin = start_date, xmax = stop_date,
+#                                          ymin = -Inf, ymax = Inf, fill = factor(set)), alpha = 0.7)
+
+df_plot_zero_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(NA, 0))
+
+gg <- ggplot()
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype), lwd = 1)
+gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1.1)
+gg <- gg + geom_hline(data = df_plot_zero_line, aes(yintercept = mu_line))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+df_plot <- subset(df, symbol == "EURUSD=X")
+df_plot <- df_plot[-c(1:(per_ema - 1)),]
 
 n_max_periods <- 2
 pval_thresh <- 0.01
 per_vec <- list_per[[1]]
-df_plot <- subset(df[, c("symbol", "date", "dt")], symbol == "EUR/USD")
-df_plot <- df_plot[-c(1:(per_ema + 1)),]
 n_t <- nrow(df_plot)
-regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
-regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
-regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
-this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+t <- 1:n_t
 ts <- df_plot$dt
-linmod <- lm(this_formula)
-summod <- summary(linmod)
-summod
-pvals <- as.numeric(summod$coefficients[, 4])
-ind_rm <- which(pvals > pval_thresh)
-round <- 0
-while(length(ind_rm) > 0){
-  round <- round + 1
-  print(paste("round ", round))
-  if(round == 7){
-    print("Too many rounds, aborting.")
-    break
-  }
-  regrsrs_char <- strsplit(as.character(regrsrs), " \\+ ")[[1]]
-  regrsrs_char <- regrsrs_char[-ind_rm]
-  regrsrs <- paste(regrsrs_char, collapse = " + ")
-  this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
-  linmod <- lm(this_formula)
-  #---------------------
-  summod <- summary(linmod)
-  print(summod)
-  pvals <- as.numeric(summod$coefficients[, 4])
-  ind_rm <- which(pvals > pval_thresh)
-}
 
+yhat <- fitWave(ts, t, per_vec, n_max_periods = 3)
+  
 df_plot$yhat <- fitted(linmod)
+df_plot <- df_plot %>% gather(Type, Value, exchange.rate:yhat)
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "exchange.rate")] <- "spot"
+df_plot$Subtype[which(df_plot$Type == "yhat")] <- "yhat"
+df_plot$Type[which(df_plot$Type %in% c("exchange.rate", "ema"))] <- "time series"
+df_plot$Type[which(df_plot$Type %in% c("dt", "yhat"))] <- "detrended"
 
-df_plot <- df_plot %>% gather(type, value, dt:yhat)
-gg <- ggplot(df_plot, aes(x = date, y = value, group = type, color = type))
+gg <- ggplot(df_plot, aes(x = date, y = Value, group = Subtype, color = Subtype))
 gg <- gg + geom_line()
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+
+
+gathercols <- colnames(df)[2:ncol(df)]
+df_plot <- df %>% gather_("Type", "Value", gathercols)
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
+df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
+
+gg <- ggplot()
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
 gg
 
 
@@ -327,6 +599,196 @@ corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level
 
 
 #========================================================================
+
+Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL, biplot = F, eigenvalue_density_plot = F){
+  col_order <- colnames(mat_in)
+  n_ts <- ncol(mat_in)
+  row.names(mat_in) <- date_vec
+  res <- FactoMineR::PCA(mat_in, graph = F)
+  if(biplot){
+    factoextra::fviz_pca_biplot(res)
+  }
+  #--Extraction of signals (main PCs)
+  lam_cor <- as.data.frame(res$eig)$eigenvalue
+  lamcor_max <- max(lam_cor)
+  N_t <- nrow(mat_in)
+  N_c <- ncol(mat_in)
+  Q <- N_t / N_c
+  s_sq <- 1 - lamcor_max / N_c
+  #s_sq <- 1
+  lamrand_max <- s_sq * (1 + 1 / Q + 2 / sqrt(Q))
+  lamrand_min <- s_sq * (1 + 1 / Q - 2 / sqrt(Q))
+  lam <- seq(lamrand_min, lamrand_max, 0.001)
+  dens_rand <- Q / (2 * pi * s_sq) * sqrt((lamrand_max - lam) * (lam - lamrand_min)) / lam
+  df_e <- data.frame(eigenvalues = lam_cor)
+  #--Eigenvalue density vs. random matrix eigenvalue density
+  if(eigenvalue_density_plot){
+    gg <- ggplot()
+    gg <- gg + geom_density(data = df_e, aes(x = eigenvalues, color = "Correlation Matrix"), lwd = 1.1)
+    gg <- gg + geom_line(data = data.frame(x = lam, y = dens_rand), aes(x = x, y = y, color = "Random matrix"), lwd = 1.1)
+    gg <- gg + scale_colour_manual(name = "Eigenvalue density", 
+                                   values = c(`Correlation Matrix` = "blue", `Random matrix` = "orange"))
+    gg
+  }
+  #-----------------------------------------
+  mat_eigvecs <- res$var$coord
+  ind_deviating_from_noise <- which(lam_cor > (lamrand_max + 5 * 10^-1))
+  lam_signals <- lam_cor[ind_deviating_from_noise]
+  n_signals <- length(lam_signals)
+  print(paste("Number of signals: ", n_signals))
+  # Set sign of eigenvectors such that they
+  # best conform to the input time series
+  mat_PC_signals <- mat_eigvecs[, ind_deviating_from_noise]
+  mat_signals_ts <- mat_in %*% mat_PC_signals
+  if(n_signals == 1){
+    mat_signals_ts <- mat_signals_ts * 1 / lam_signals
+  }else{
+    mat_signals_ts <- mat_signals_ts %*% diag(1 / lam_signals)
+    
+  }
+  ts_avg <- rowMeans(mat_in)
+  #ts_avg[1]
+  
+  if(n_signals == 1){
+    sse <- sum((mat_signals_ts - ts_avg)^2)
+    sse_neg <- sum((-mat_signals_ts - ts_avg)^2)
+    sse_vec <- c(sse, sse_neg)
+    if(which(sse_vec == min(sse_vec)) == 2){
+      mat_PC_signals <- -mat_PC_signals
+    }
+    lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts, x = ts_avg))
+    sum_lm <- summary(lm_out)
+    param <- sum_lm$coefficients[2]
+    mat_signals_ts <- 1 / param * mat_signals_ts
+    mat_PC_signals <- 1 / param * mat_PC_signals
+    
+  }else{
+    for(i in 1:n_signals){
+      sse <- sum((mat_signals_ts[, i] - ts_avg)^2)
+      sse_neg <- sum((-mat_signals_ts[, i] - ts_avg)^2)
+      sse_vec <- c(sse, sse_neg)
+      if(which(sse_vec == min(sse_vec)) == 2){
+        mat_PC_signals[, i] <- -mat_PC_signals[, i]
+      }
+      lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts[, i], x = ts_avg))
+      sum_lm <- summary(lm_out)
+      param <- sum_lm$coefficients[2]
+      mat_signals_ts[, i] <- 1 / param * mat_signals_ts[, i]
+      mat_PC_signals[, i] <- 1 / param * mat_PC_signals[, i]
+      
+    }
+    
+  }
+  
+  #------------------------------------------------------------
+  df_plot <- data.frame(ts = col_order, mat_PC_signals)
+  signal_id <- paste("Signal", c(1:n_signals))
+  colnames(df_plot)[2:(n_signals + 1)] <- signal_id
+  gathercols <- as.character(signal_id)
+  df_plot <- gather_(df_plot, "Signal", "Loading", gathercols)
+  #--
+  if(!is.null(list_tsTypes)){
+    df_plot$Type <- NA
+    u <- as.character(df_plot$ts)
+    for(i in 1:length(list_tsTypes)){
+      ind <- which(u %in% list_tsTypes[[i]])
+      df_plot$Type[ind] <- tsType_names[i]
+    }
+    df_plot$Type <- as.factor(df_plot$Type)
+    xx <- df_plot$Type
+    df_plot$ts <- factor(df_plot$ts, levels = unique(df_plot$ts[order(xx)]))
+    gg <- ggplot(df_plot, aes(x = Indicator, y = Loading, fill = Type))
+  }else{
+    gg <- ggplot(df_plot, aes(x = Indicator, y = Loading))
+  }
+  #--
+  gg <- gg + geom_bar(stat = "identity", position = "dodge")
+  gg <- gg + facet_wrap(~ Signal, nrow = 1)
+  #gg <- gg + labs(title = )
+  gg <- gg + theme(axis.text.y = element_text(face = "bold", size = 13),
+                   axis.text.x = element_text(face = "bold", size = 11),
+                   axis.title.y = element_text(face = "bold", size = 11),
+                   axis.title.x = element_text(face = "bold", size = 11))
+  gg <- gg + coord_equal()
+  # if(N_c <= 50){
+  #   gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
+  #                    axis.title.y = element_blank())
+  # }else{
+  #   gg <- gg + theme(axis.text.x = element_blank(),
+  #                    axis.title.y = element_blank())
+  # }
+  gg <- gg + coord_flip()
+  print(gg)
+  
+}
+
+
+
+
+
+
+
+spy_sector_symbs <- c("SPY", "XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
+                           "XLU", "XLI", "XBI", "IYT")
+spy_sector_detail <- c("S&P 500", "Financials", "Communications", "Luxury goods", "Staple goods",
+                       "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
+                       "Biotechnology", "Transportation")
+minerals_symbs <- c("GLD", "GDX", "XME")
+minerals_detail <- c("Gold", "Gold miners", "US metals and mining")
+agriculture_symbs <- c("DBA", "JJG", "BAL", "SOYB", "SGG", "JO", "NIB")
+agriculture_detail <- c("General agriculture", "Grains", "Cotton", "Soybean", "Sugar", "Coffee", "Cacao")
+energy_symbs <- c("USO", "FUE", "WOOD", "ICLN", "KOL", "UNG")
+energy_detail <- c("US Oil", "Biofuels", "Timber", "Clean energy", "Coal", "US Natural gas")
+#currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
+#currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
+currency_symbs <- c("EMLC", "EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
+                    "GBPUSD=X", "AUDUSD=X", "INR=X")
+currency_detail <- c("Emerging mkt currencies", "EUR/USD", "USD/JPY",
+                     "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
+emerg_mkt_symbs <- c("ELD", "VWOB")
+emerg_mkt_detail <- c("Emerg mkts debt", "Emerg mkts gov bond")
+crypto_symbs <- c("BLOK", "LEGR", "KOIN", "BCNA", "BTC-USD")
+crypto_detail <- crypto_symbs
+Tbond_symbs <- c("IEI", "IEF", "TLT", "BIL")
+Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs", "T-bond 1-3 months")
+
+ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+length(ts_symb_vec)
+
+fromdate = "2018-06-20"
+tbl_ohlcv <- tq_get(ts_symb_vec, get = "stock.prices", from = fromdate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+df_ohlcv$p <- rowSums(df_ohlcv[, c(4:6)]) / 3
+#--
+df <- df_ohlcv[, c("date", "symbol", "p")]
+df <- as.data.frame(df %>% group_by(symbol) %>% mutate(dup = duplicated(date)))
+df <- subset(df, dup == F)
+df$dup <- NULL
+df <- df %>% spread(symbol, p)
+df <- df[-1, ]
+date_vec <- df$date
+mat_in <- na.approx(df[, -1])
+mat_in <- apply(mat_in, 2, function(x) x - EMA(x, per_ema))
+mat_in <- mat_in[-c(1:(per_ema - 1)), ]
+
+
+
+
+
+
+
+
+
+
+
+Signals_from_noise(mat_in, list_tsTypes = NULL,
+                   tsType_names = NULL,
+                   biplot = T, eigenvalue_density_plot = T)
+  
+
+
+
 
 
 
