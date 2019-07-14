@@ -599,15 +599,46 @@ corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level
 
 
 #========================================================================
+#========================================================================
+#========================================================================
+#========================================================================
 
-Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL, biplot = F, eigenvalue_density_plot = F){
+Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
+                               tsType_names = NULL,
+                               pca_var_plot = F,
+                               pca_ind_plot = F,
+                               eigenvalue_density_plot = F){
   col_order <- colnames(mat_in)
+  #date_vec <- as.Date(row.names(mat_in))
   n_ts <- ncol(mat_in)
-  row.names(mat_in) <- date_vec
-  res <- FactoMineR::PCA(mat_in, graph = F)
-  if(biplot){
-    factoextra::fviz_pca_biplot(res)
+  #----
+  if(!is.null(list_tsTypes)){
+    group_vec <- rep(NA, n_ts)
+    for(i in 1:length(list_tsTypes)){
+      this_tsType_vec <- list_tsTypes[[i]]
+      this_tsType_name <- tsType_names[i]
+      group_vec[which(col_order %in% this_tsType_vec)] <- this_tsType_name
+      
+    }
   }
+  #----
+  if(pca_ind_plot){
+    res <- FactoMineR::PCA(t(mat_in), graph = F)
+    gg <- factoextra::fviz_pca_ind(res, habillage = factor(group_vec), addEllipses = T)
+    print(gg)
+  }
+  #----
+  res <- FactoMineR::PCA(mat_in, graph = F)
+  #----
+  if(pca_var_plot){
+    gg <- factoextra::fviz_pca_var(res, habillage = factor(group_vec))
+    print(gg)
+  }
+  # library(mclust)
+  # mc <- Mclust(t(mat_in))
+  # summary(mc)
+  # View(mc$classification)
+  # factoextra::fviz_cluster(mc, frame.type = "norm", geom = "text")
   #--Extraction of signals (main PCs)
   lam_cor <- as.data.frame(res$eig)$eigenvalue
   lamcor_max <- max(lam_cor)
@@ -633,6 +664,9 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL,
   #-----------------------------------------
   mat_eigvecs <- res$var$coord
   ind_deviating_from_noise <- which(lam_cor > (lamrand_max + 5 * 10^-1))
+  if(ncol(mat_eigvecs) < length(ind_deviating_from_noise)){
+    ind_deviating_from_noise <- 1:ncol(mat_eigvecs)
+  }
   lam_signals <- lam_cor[ind_deviating_from_noise]
   n_signals <- length(lam_signals)
   print(paste("Number of signals: ", n_signals))
@@ -681,6 +715,7 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL,
   }
   
   #------------------------------------------------------------
+  # Plot loadings barcharts
   df_plot <- data.frame(ts = col_order, mat_PC_signals)
   signal_id <- paste("Signal", c(1:n_signals))
   colnames(df_plot)[2:(n_signals + 1)] <- signal_id
@@ -688,27 +723,28 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL,
   df_plot <- gather_(df_plot, "Signal", "Loading", gathercols)
   #--
   if(!is.null(list_tsTypes)){
-    df_plot$Type <- NA
-    u <- as.character(df_plot$ts)
-    for(i in 1:length(list_tsTypes)){
-      ind <- which(u %in% list_tsTypes[[i]])
-      df_plot$Type[ind] <- tsType_names[i]
-    }
-    df_plot$Type <- as.factor(df_plot$Type)
+    # df_plot$Type <- NA
+    # u <- as.character(df_plot$ts)
+    # for(i in 1:length(list_tsTypes)){
+    #   ind <- which(u %in% list_tsTypes[[i]])
+    #   df_plot$Type[ind] <- tsType_names[i]
+    # }
+    # df_plot$Type <- as.factor(df_plot$Type)
+    df_plot$Type <- factor(group_vec)
     xx <- df_plot$Type
     df_plot$ts <- factor(df_plot$ts, levels = unique(df_plot$ts[order(xx)]))
-    gg <- ggplot(df_plot, aes(x = Indicator, y = Loading, fill = Type))
+    gg <- ggplot(df_plot, aes(x = ts, y = Loading, fill = Type))
   }else{
-    gg <- ggplot(df_plot, aes(x = Indicator, y = Loading))
+    gg <- ggplot(df_plot, aes(x = ts, y = Loading))
   }
   #--
   gg <- gg + geom_bar(stat = "identity", position = "dodge")
   gg <- gg + facet_wrap(~ Signal, nrow = 1)
   #gg <- gg + labs(title = )
-  gg <- gg + theme(axis.text.y = element_text(face = "bold", size = 13),
-                   axis.text.x = element_text(face = "bold", size = 11),
-                   axis.title.y = element_text(face = "bold", size = 11),
-                   axis.title.x = element_text(face = "bold", size = 11))
+  gg <- gg + theme(axis.text.y = element_text(face = "bold", size = 10),
+                   axis.text.x = element_text(face = "bold", size = 10),
+                   axis.title.y = element_text(face = "bold", size = 10),
+                   axis.title.x = element_text(face = "bold", size = 10))
   gg <- gg + coord_equal()
   # if(N_c <= 50){
   #   gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
@@ -719,43 +755,68 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL, tsType_names = NULL,
   # }
   gg <- gg + coord_flip()
   print(gg)
+  #---------------------------------
+  # Plot signal ts
+  df_plot1 <- data.frame(date = date_vec, ts_avg)
+  df_plot2 <- data.frame(date = date_vec, mat_signals_ts)
+  signal_id <- paste("Signal", c(1:n_signals))
+  colnames(df_plot2)[2:(n_signals + 1)] <- signal_id
+  gathercols <- signal_id
+  df_plot2 <- df_plot2 %>% gather_("Signal", "Value", gathercols)
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot1, aes(x = date, y = ts_avg), color = "orange", lwd = 1.2)
+  gg <- gg + geom_line(data = df_plot2, aes(x = date, y = Value))
+  gg <- gg + facet_wrap(~ Signal, ncol = 1)
+  gg <- gg + theme(axis.title.y = element_blank())
+  gg
+  
   
 }
 
 
 
-
-
-
+#------------------------------------------------------------
 
 spy_sector_symbs <- c("SPY", "XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
-                           "XLU", "XLI", "XBI", "IYT")
-spy_sector_detail <- c("S&P 500", "Financials", "Communications", "Luxury goods", "Staple goods",
-                       "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
-                       "Biotechnology", "Transportation")
-minerals_symbs <- c("GLD", "GDX", "XME")
-minerals_detail <- c("Gold", "Gold miners", "US metals and mining")
+                           "XLU", "XLI", "XBI", "IYT", "TTEK")
+spy_sector_detail <- c("S&P 500 ETF", "Financials ETF", "Communications ETF", "Luxury goods ETF", "Staple goods ETF",
+                       "Healthcare ETF", "Technology ETF", "Real estate ETF", "Utilities ETF", "Industrial ETF",
+                       "Biotechnology ETF", "Transportation ETF", "Gov. (Tetratech)")
+minerals_symbs <- c("GLD", "GDX", "XME", "SLV", "JJC")
+minerals_detail <- c("Gold ETF", "Gold miners ETF", "US metals and mining ETF", "Silver ETF", "Copper ETF")
 agriculture_symbs <- c("DBA", "JJG", "BAL", "SOYB", "SGG", "JO", "NIB")
-agriculture_detail <- c("General agriculture", "Grains", "Cotton", "Soybean", "Sugar", "Coffee", "Cacao")
-energy_symbs <- c("USO", "FUE", "WOOD", "ICLN", "KOL", "UNG")
-energy_detail <- c("US Oil", "Biofuels", "Timber", "Clean energy", "Coal", "US Natural gas")
+agriculture_detail <- c("General agriculture ETF", "Grains ETF", "Cotton ETF", "Soybean ETF", "Sugar ETF", "Coffee ETF", "Cacao ETF")
+energy_symbs <- c("WTI", "FUE", "WOOD", "ICLN", "KOL", "UNG")
+energy_detail <- c("Oil (W&T Offshore Inc.)", "Biofuels ETF", "Timber ETF", "Clean energy ETF", "Coal ETF", "US natural gas ETF")
 #currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
 #currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
 currency_symbs <- c("EMLC", "EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
                     "GBPUSD=X", "AUDUSD=X", "INR=X")
-currency_detail <- c("Emerging mkt currencies", "EUR/USD", "USD/JPY",
+currency_detail <- c("Emerging mkt currencies ETF", "EUR/USD", "USD/JPY",
                      "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
 emerg_mkt_symbs <- c("ELD", "VWOB")
-emerg_mkt_detail <- c("Emerg mkts debt", "Emerg mkts gov bond")
-crypto_symbs <- c("BLOK", "LEGR", "KOIN", "BCNA", "BTC-USD")
+emerg_mkt_detail <- c("Emerg mkts debt ETF", "Emerg mkts gov bond ETF")
+crypto_symbs <- c("BLOK", "LEGR", "KOIN", "BCNA")
 crypto_detail <- crypto_symbs
 Tbond_symbs <- c("IEI", "IEF", "TLT", "BIL")
-Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs", "T-bond 1-3 months")
+Tbond_detail <- c("T-bond 3-7 yrs ETF", "T-bond 7-10 yrs ETF", "T-bond 20+ yrs ETF", "T-bond 1-3 months ETF")
 
 ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
                  currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+ts_detail_vec <- c(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+df_symb_detail <- data.frame(symbol = ts_symb_vec, detail = ts_detail_vec)
+#--
 length(ts_symb_vec)
-
+#--
+# list_tsTypes <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+#                      currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+list_tsTypes <- list(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+                     currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+tsType_names <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currency Pairs",
+                  "Emerging Markets", "Cryptocurrencies/Blockchain", "T-Bonds")
+#--
+per_ema <- 13
 fromdate = "2018-06-20"
 tbl_ohlcv <- tq_get(ts_symb_vec, get = "stock.prices", from = fromdate)
 df_ohlcv <- as.data.frame(tbl_ohlcv)
@@ -767,24 +828,27 @@ df <- subset(df, dup == F)
 df$dup <- NULL
 df <- df %>% spread(symbol, p)
 df <- df[-1, ]
-date_vec <- df$date
 mat_in <- na.approx(df[, -1])
+
+o <- apply(mat_in, 2, function(x) length(which(is.na(x))))
+table(o)
+#which(o==374)
+ind_rm_na <- nrow(mat_in)
+mat_in <- mat_in[-ind_rm_na, ]
+ind_rm_ema <- 1:(per_ema - 1)
+
 mat_in <- apply(mat_in, 2, function(x) x - EMA(x, per_ema))
-mat_in <- mat_in[-c(1:(per_ema - 1)), ]
+mat_in <- mat_in[-ind_rm_ema, ]
+date_vec <- df$date[-c(ind_rm_ema, ind_rm_na)]
+row.names(mat_in) <- date_vec
+colnames(mat_in) <- as.character(df_symb_detail$detail[order(df_symb_detail$symbol)])
 
 
-
-
-
-
-
-
-
-
-
-Signals_from_noise(mat_in, list_tsTypes = NULL,
-                   tsType_names = NULL,
-                   biplot = T, eigenvalue_density_plot = T)
+Signals_from_noise(mat_in, list_tsTypes = list_tsTypes,
+                   tsType_names = tsType_names,
+                   pca_var_plot = T,
+                   pca_ind_plot = T,
+                   eigenvalue_density_plot = T)
   
 
 
