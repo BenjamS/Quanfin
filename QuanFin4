@@ -1,9 +1,10 @@
+setwd("D:/OneDrive - CGIAR/Documents")
 library(tidyquant)
-library(ggthemes)
 library(WaveletComp)
 library(Hmisc)
 library(corrplot)
-source('~/getTsTrendInds.R')
+library(alphavantager)
+source('./getTsTrendInds.R')
 
 
 fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead = 30){
@@ -56,16 +57,27 @@ fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAh
 
 tq_exchange_options()
 tq_index_options()
+#tq_index("SP500")
+# tq_index("DOWGLOBAL")
+# tq_exchange("NYSE")
 
-fromdate<-"2017-06-20"; todate <- Sys.Date() #todate <- "2019-01-01"
+fromdate <- "2017-06-20"; todate <- Sys.Date() #todate <- "2019-01-01"
 
 this_guy <- c("SPY")
-tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
-df_ohlcv <- as.data.frame(tbl_ohlcv)
+#tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
+#df_ohlcv <- as.data.frame(tbl_ohlcv)
+
+av_api_key("HQBAWJK4Y3YW81VG")
+df_ohlcv <- this_guy %>%
+  tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = "5min",
+         outputsize = "full")
+#nrow(df_ohlcv)
 df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+colnames(df_ohlcv)[1] <- "date"
 #--
 df <- df_ohlcv[, c("date", "p")]
 df <- as.data.frame(df)
+df <- df %>% mutate(date = as.POSIXct(date, format = "%Y-%m-%d %H:%M:%S"))
 o <- apply(df, 2, function(x) length(which(is.na(x))))
 table(o)
 #df[, -1] <- na.spline(df[, -1])
@@ -74,8 +86,9 @@ per_ema <- 21
 #df$p <- log(df$p)
 df$ema <- EMA(df$p, per_ema)
 df$dt <- df$p - df$ema
+df$t <- 1:nrow(df)
 
-gathercols <- colnames(df)[2:ncol(df)]
+gathercols <- colnames(df)[2:(ncol(df) - 1)]
 df_plot <- df %>% gather_("Type", "Value", gathercols)
 df_plot$Subtype <- NA
 df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
@@ -84,7 +97,7 @@ df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
 df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
 
 gg <- ggplot()
-gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
+gg <- gg + geom_line(data = df_plot, aes(x = t, y = Value, color = Subtype))
 gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
 gg <- gg + theme(legend.position = "none")
 gg
@@ -93,8 +106,8 @@ gg
 in_df <- df
 in_df$ema <- NULL
 outlist <- getTsTrendInds(in_df,
-                      thresh_pct_uptrend = 0.7,
-                      thresh_pct_dntrend = -0.7)
+                          thresh_pct_uptrend = 0.7,
+                          thresh_pct_dntrend = -0.7)
 df_upTrnds <- outlist[[1]]
 df_dnTrnds <- outlist[[2]]
 
@@ -104,12 +117,12 @@ df_plot_mean_line <- data.frame(Type = c("time series", "detrended"),
                                 mu_line = c(mu_p, mu_p_dt))
 gg <- ggplot()
 gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
-                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
 gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green", midpoint = 0)
 # gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
 #                                              ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
 # gg <- gg + scale_fill_manual(values = c("magenta", "green"))
-gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
+gg <- gg + geom_line(data = df_plot, aes(x = as.Date(date), y = Value, color = Subtype))
 gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
 gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "orange")
 gg <- gg + theme(legend.position = "none")
@@ -183,7 +196,7 @@ gg <- ggplot()
 #                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
 # gg <- gg + scale_fill_manual(values = c("magenta", "green"))
 gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
-                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
 gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
 gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype), lwd = 1)
 gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1.1)
@@ -325,8 +338,8 @@ fromdate<-"2017-01-01"; todate <- Sys.Date() #todate <- "2019-01-01"
 currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
                     "GBPUSD=X", "AUDUSD=X", "INR=X")
 tbl_ohlcv <- tq_get(currency_symbs, 
-                   get = "stock.prices", 
-                   from = fromdate)
+                    get = "stock.prices", 
+                    from = fromdate)
 df_ohlcv <- as.data.frame(tbl_ohlcv)
 df_ohlcv$p <- rowSums(df_ohlcv[, c(4:6)]) / 3
 #--
@@ -587,7 +600,7 @@ t <- 1:n_t
 ts <- df_plot$dt
 
 yhat <- fitWave(ts, t, per_vec, n_max_periods = 3)
-  
+
 df_plot$yhat <- fitted(linmod)
 df_plot <- df_plot %>% gather(Type, Value, exchange.rate:yhat)
 df_plot$Subtype <- NA
@@ -652,14 +665,15 @@ corrplot(cormat_econ, type="upper", order="hclust", p.mat = pmat_econ, sig.level
 #========================================================================
 #========================================================================
 #========================================================================
-
 Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
                                tsType_names = NULL,
                                pca_var_plot = F,
                                pca_ind_plot = F,
-                               eigenvalue_density_plot = F){
+                               eigenvalue_density_plot = F,
+                               yearly = F){
   col_order <- colnames(mat_in)
-  #date_vec <- as.Date(row.names(mat_in))
+  date_vec <- row.names(mat_in)
+  if(yearly){date_vec <- as.integer(date_vec)}
   n_ts <- ncol(mat_in)
   #----
   if(!is.null(list_tsTypes)){
@@ -709,12 +723,12 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
     gg <- gg + geom_line(data = data.frame(x = lam, y = dens_rand), aes(x = x, y = y, color = "Random matrix"), lwd = 1.1)
     gg <- gg + scale_colour_manual(name = "Eigenvalue density", 
                                    values = c(`Correlation Matrix` = "blue", `Random matrix` = "orange"))
-    gg
+    print(gg)
   }
   #-----------------------------------------
-  mat_eigvecs <- res$var$coord
   ind_deviating_from_noise <- which(lam_cor > (lamrand_max + 5 * 10^-1))
-  if(ncol(mat_eigvecs) < length(ind_deviating_from_noise)){
+  mat_eigvecs_scaled <- res$var$coord
+  if(ncol(mat_eigvecs_scaled) < length(ind_deviating_from_noise)){
     ind_deviating_from_noise <- 1:ncol(mat_eigvecs)
   }
   lam_signals <- lam_cor[ind_deviating_from_noise]
@@ -722,48 +736,35 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
   print(paste("Number of signals: ", n_signals))
   # Set sign of eigenvectors such that they
   # best conform to the input time series
-  mat_PC_signals <- mat_eigvecs[, ind_deviating_from_noise]
-  mat_signals_ts <- mat_in %*% mat_PC_signals
   if(n_signals == 1){
-    mat_signals_ts <- mat_signals_ts * 1 / lam_signals
+    mat_PC_signals <- mat_eigvecs_scaled[, ind_deviating_from_noise] / sqrt(lam_signals)
+    mat_signals_ts <- mat_in %*% mat_PC_signals
+    mat_signals_ts <- mat_signals_ts / lam_signals
   }else{
+    mat_PC_signals <- mat_eigvecs_scaled[, ind_deviating_from_noise] %*% diag(1 / sqrt(lam_signals))
+    mat_signals_ts <- mat_in %*% mat_PC_signals
     mat_signals_ts <- mat_signals_ts %*% diag(1 / lam_signals)
-    
   }
-  ts_avg <- rowMeans(mat_in)
-  #ts_avg[1]
-  
+  ts_avg <- mat_in %*% rep(1, n_ts) * 1 / n_ts
   if(n_signals == 1){
     sse <- sum((mat_signals_ts - ts_avg)^2)
     sse_neg <- sum((-mat_signals_ts - ts_avg)^2)
-    sse_vec <- c(sse, sse_neg)
-    if(which(sse_vec == min(sse_vec)) == 2){
+    if(sse_neg < sse){
       mat_PC_signals <- -mat_PC_signals
+      mat_signals_ts <- -mat_signals_ts
     }
-    lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts, x = ts_avg))
-    sum_lm <- summary(lm_out)
-    param <- sum_lm$coefficients[2]
-    mat_signals_ts <- 1 / param * mat_signals_ts
-    mat_PC_signals <- 1 / param * mat_PC_signals
-    
   }else{
     for(i in 1:n_signals){
       sse <- sum((mat_signals_ts[, i] - ts_avg)^2)
       sse_neg <- sum((-mat_signals_ts[, i] - ts_avg)^2)
       sse_vec <- c(sse, sse_neg)
-      if(which(sse_vec == min(sse_vec)) == 2){
+      if(sse_neg < sse){
         mat_PC_signals[, i] <- -mat_PC_signals[, i]
+        mat_signals_ts[, i] <- -mat_signals_ts[, i]
       }
-      lm_out <- lm(y ~ x, data = data.frame(y = mat_signals_ts[, i], x = ts_avg))
-      sum_lm <- summary(lm_out)
-      param <- sum_lm$coefficients[2]
-      mat_signals_ts[, i] <- 1 / param * mat_signals_ts[, i]
-      mat_PC_signals[, i] <- 1 / param * mat_PC_signals[, i]
-      
     }
     
   }
-  
   #------------------------------------------------------------
   # Plot loadings barcharts
   df_plot <- data.frame(ts = col_order, mat_PC_signals)
@@ -806,7 +807,7 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
   gg <- gg + coord_flip()
   print(gg)
   #---------------------------------
-  # Plot signal ts
+  # Plot signal ts against average
   df_plot1 <- data.frame(date = date_vec, ts_avg)
   df_plot2 <- data.frame(date = date_vec, mat_signals_ts)
   signal_id <- paste("Signal", c(1:n_signals))
@@ -819,6 +820,15 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
   gg <- gg + facet_wrap(~ Signal, ncol = 1)
   gg <- gg + theme(axis.title.y = element_blank())
   gg
+  print(gg)
+  #--Correlation matrix
+  # t(mat_signals_ts) %*% mat_signals_ts
+  # t(mat_PC_signals) %*% mat_PC_signals
+  rcorr_out <- rcorr(mat_signals_ts)
+  cormat <- rcorr_out$r
+  print(cormat)
+  pmat <- rcorr_out$P
+  corrplot(cormat, type="upper", order="hclust", p.mat = pmat, sig.level = 0.01, insig = "blank", tl.col = "black", tl.srt = 45)
   #---------------------------------
   df_sigs <- data.frame(date = date_vec, mat_signals_ts)
   return(df_sigs)
@@ -829,7 +839,7 @@ Signals_from_noise <- function(mat_in, list_tsTypes = NULL,
 #------------------------------------------------------------
 
 spy_sector_symbs <- c("SPY", "XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
-                           "XLU", "XLI", "XBI", "IYT", "TTEK", "VXX")
+                      "XLU", "XLI", "XBI", "IYT", "TTEK", "VXX")
 spy_sector_detail <- c("S&P 500 ETF", "Financials ETF", "Communications ETF", "Luxury goods ETF", "Staple goods ETF",
                        "Healthcare ETF", "Technology ETF", "Real estate ETF", "Utilities ETF", "Industrial ETF",
                        "Biotechnology ETF", "Transportation ETF", "Gov. (Tetratech)", "VIX ETF")
@@ -900,11 +910,11 @@ colnames(mat_in) <- as.character(df_symb_detail$detail[order(df_symb_detail$symb
 
 
 df_sigs <- Signals_from_noise(mat_in, list_tsTypes = list_tsTypes,
-                   tsType_names = tsType_names,
-                   pca_var_plot = T,
-                   pca_ind_plot = T,
-                   eigenvalue_density_plot = T)
-  
+                              tsType_names = tsType_names,
+                              pca_var_plot = T,
+                              pca_ind_plot = T,
+                              eigenvalue_density_plot = T)
+
 #========================================================================
 #========================================================================
 #========================================================================
@@ -931,7 +941,7 @@ df_plot_mean_line <- data.frame(Type = c("time series", "detrended"),
                                 mu_line = c(mu_p, mu_p_dt))
 gg <- ggplot()
 gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
-                                             ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
 gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
 # gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
 #                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
