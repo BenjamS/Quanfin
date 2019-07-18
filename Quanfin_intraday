@@ -1,0 +1,312 @@
+#setwd("D:/OneDrive - CGIAR/Documents")
+library(tidyquant)
+library(WaveletComp)
+library(Hmisc)
+library(corrplot)
+library(alphavantager)
+source('./getTsTrendInds.R')
+
+
+fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead = 30){
+  n_t <- length(ts)
+  t <- 1:n_t
+  regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
+  this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+  linmod <- lm(this_formula)
+  summod <- summary(linmod)
+  #summod
+  pvals <- as.numeric(summod$coefficients[, 4])
+  ind_rm <- which(pvals > pval_thresh)
+  round <- 0
+  while(length(ind_rm) > 0){
+    round <- round + 1
+    print(paste("round ", round))
+    if(round == 7){
+      print("Too many rounds, aborting.")
+      break
+    }
+    regrsrs_char <- strsplit(as.character(regrsrs), " \\+ ")[[1]]
+    regrsrs_char <- regrsrs_char[-ind_rm]
+    regrsrs <- paste(regrsrs_char, collapse = " + ")
+    this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+    linmod <- lm(this_formula)
+    #---------------------
+    summod <- summary(linmod)
+    #print(summod)
+    pvals <- as.numeric(summod$coefficients[, 4])
+    ind_rm <- which(pvals > pval_thresh)
+  }
+  fitted_wave <- fitted(linmod)
+  
+  t <- (n_t + 1):(n_t + n_lookAhead)
+  regrsrs_fut <- names(linmod$coefficients)
+  #regrsrs_fut <- gsub("t", "t_fut", regrsrs_fut)
+  list_fut <- list()
+  for(i in 1:length(regrsrs_fut)){
+    list_fut[[i]] <- eval(parse(text = regrsrs_fut[i]))
+  }
+  df_fut <- as.data.frame(do.call(cbind, list_fut))
+  predict_wave <- predict(linmod, df_fut, interval = "prediction")
+  list_out <- list(fitted_wave, predict_wave)
+  print(summod)
+  return(list_out)
+}
+#========================================================================
+
+tq_exchange_options()
+tq_index_options()
+#tq_index("SP500")
+# tq_index("DOWGLOBAL")
+# tq_exchange("NYSE")
+
+fromdate <- "2017-06-20"; todate <- Sys.Date() #todate <- "2019-01-01"
+
+this_ts <- c("SPY")
+#tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
+#df_ohlcv <- as.data.frame(tbl_ohlcv)
+
+av_api_key("HQBAWJK4Y3YW81VG")
+
+df_ohlcv <- this_ts %>%
+  tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = "5min",
+         outputsize = "full")
+df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+df <- as.data.frame(df_ohlcv[, c("timestamp", "p")])
+#--
+o <- apply(df, 2, function(x) length(which(is.na(x))))
+table(o)
+#--
+df$timestamp <- factor(format(df$timestamp, format = "%m-%d%\n%H:%M"), ordered = T)
+xAxis_labels <- df$timestamp[seq(1, nrow(df), length.out = 10)]
+#--
+per_ema <- 21
+df$ema <- EMA(df$p, per_ema)
+df$dt <- df$p - df$ema
+#--
+gathercols <- colnames(df)[2:ncol(df)]
+df_plot <- df %>% gather_("Type", "Value", gathercols)
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
+df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
+
+gg <- ggplot()
+gg <- gg + geom_line(data = df_plot, aes(x = timestamp, y = Value, color = Subtype, group = 1))
+gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+
+# Detect periodicity
+df_wave <- df[ -c(1:(per_ema - 1)), ]
+#df_wave$dt <- scale(df_wave$dt)
+my.w <- analyze.wavelet(df_wave, "dt",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+ind_critPoints <- findPeaks(df_periodogram$power)
+critPers <- df_periodogram$period[ind_critPoints]
+critPers
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.5)
+gg
+
+
+
+
+
+
+
+this_ts <- "SPY"
+#av_api_key("YOUR_KEY_HERE")
+df_ohlcv <- this_ts %>%
+  tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY",
+         interval = "5min", outputsize = "full")
+df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+df <- df_ohlcv[, c("timestamp", "p")]
+df$timestamp <- factor(format(df$timestamp, format = "%m-%d%\n%H:%M"), ordered = T)
+xAxis_labels <- df$timestamp[seq(1, nrow(df), length.out = 10)]
+
+gg <- ggplot()
+gg <- gg + geom_line(data = df, aes(x = timestamp, y = p, group = 1))
+gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+gg
+
+
+
+
+
+
+
+
+
+
+
+
+
+#---------------------
+in_df <- df
+in_df$ema <- NULL
+outlist <- getTsTrendInds(in_df,
+                          thresh_pct_uptrend = 0.7,
+                          thresh_pct_dntrend = -0.7)
+df_upTrnds <- outlist[[1]]
+df_dnTrnds <- outlist[[2]]
+
+mu_p <- mean(df$p, na.rm = T)
+mu_p_dt <- 0#mean(df_x$p_dt, na.rm = T)
+df_plot_mean_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(mu_p, mu_p_dt))
+gg <- ggplot()
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green", midpoint = 0)
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                              ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_line(data = df_plot, aes(x = as.Date(date), y = Value, color = Subtype))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + geom_hline(data = df_plot_mean_line, aes(yintercept = mu_line), color = "orange")
+gg <- gg + theme(legend.position = "none")
+gg
+
+#========================================================================
+# Detect periodicity
+df_wave <- df[ -c(1:(per_ema + 1)),]
+#df_wave$dt <- scale(df_wave$dt)
+my.w <- analyze.wavelet(df_wave, "dt",
+                        loess.span = 0,
+                        dt = 1, dj = 1/250,
+                        lowerPeriod = 2^3,
+                        upperPeriod = 2^9,
+                        make.pval = TRUE, n.sim = 10)
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+         legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
+df_periodogram <- data.frame(period = my.w$Period, power = my.w$Power.avg)
+ind_critPoints <- findPeaks(df_periodogram$power)
+critPers <- df_periodogram$period[ind_critPoints]
+critPers
+gg <- ggplot(df_periodogram, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.5)
+gg
+#-------------------
+critPwrs <- df_periodogram$power[ind_critPoints]
+ind_order <- order(critPwrs, decreasing = T)
+per_vec <- critPers[ind_order]
+#-------------------
+# Validate
+n_lookAhead = 150
+ind_fit <- 1:(nrow(df_wave) - n_lookAhead)
+ind_test <- setdiff(1:nrow(df_wave), ind_fit)
+ts <- df_wave$dt[ind_fit]
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+yhat <- out_fitWave[[1]]
+ypredict <- out_fitWave[[2]]
+#-------------------
+
+df_wave$yhat <- c(yhat, ypredict[, 1])
+df_wave$set <- NA
+df_wave$set[ind_fit] <- "fit"
+df_wave$set[ind_test] <- "test"
+
+df_plot <- df_wave
+#df_plot$dt <- NULL
+df_plot <- df_plot %>% gather(Type, Value, p:yhat)
+
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Subtype[which(df_plot$Type == "yhat")] <- "yhat"
+df_plot$Type[which(df_plot$Type %in% c("p", "ema"))] <- "time series"
+df_plot$Type[which(df_plot$Type %in% c("dt", "yhat"))] <- "detrended"
+#df_plot <- df_plot[800:nrow(df_plot), ]
+
+# df_rect <- data.frame(start_date = c(df_plot$date[1], df_plot$date[ind_test[1]]),
+#                       stop_date = c(df_plot$date[ind_fit[length(ind_fit)]], df_plot$date[ind_test[length(ind_test)]]),
+#                       set = c("fit", "train"))
+# gg <- gg + geom_rect(data = df_rect, aes(xmin = start_date, xmax = stop_date,
+#                                          ymin = -Inf, ymax = Inf, fill = factor(set)), alpha = 0.7)
+
+df_plot_zero_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(NA, 0))
+
+gg <- ggplot()
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype), lwd = 1)
+gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1.1)
+gg <- gg + geom_hline(data = df_plot_zero_line, aes(yintercept = mu_line))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
+#-----------------------
+#-------------------
+# Predict
+n_lookAhead = 50
+ind_fit <- 1:nrow(df_wave)
+ind_pred <- (nrow(df_wave) + 1):(nrow(df_wave) + n_lookAhead)
+ts <- df_wave$dt[ind_fit]
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+yhat <- out_fitWave[[1]]
+ypredict <- out_fitWave[[2]]
+#-------------------
+df_wave$yhat <- yhat
+df_wave$set <- "fit"
+date_fut <- seq(as.Date(df_wave$date[nrow(df_wave)] + 1), as.Date(df_wave$date[nrow(df_wave)] + 2 * n_lookAhead), by = 1)
+date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
+#length(date_fut)
+date_fut <- date_fut[1:n_lookAhead]
+df_add <- data.frame(date = date_fut, p = NA, ema = NA, dt = NA, yhat = ypredict[, 1], set = "predict")
+df_wave <- rbind(df_wave, df_add)
+
+df_plot <- df_wave
+#df_plot$dt <- NULL
+df_plot <- df_plot %>% gather(Type, Value, p:yhat)
+
+df_plot$Subtype <- NA
+df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
+df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
+df_plot$Subtype[which(df_plot$Type == "yhat")] <- "yhat"
+df_plot$Type[which(df_plot$Type %in% c("p", "ema"))] <- "time series"
+df_plot$Type[which(df_plot$Type %in% c("dt", "yhat"))] <- "detrended"
+#df_plot <- df_plot[800:nrow(df_plot), ]
+
+# df_rect <- data.frame(start_date = c(df_plot$date[1], df_plot$date[ind_test[1]]),
+#                       stop_date = c(df_plot$date[ind_fit[length(ind_fit)]], df_plot$date[ind_test[length(ind_test)]]),
+#                       set = c("fit", "train"))
+# gg <- gg + geom_rect(data = df_rect, aes(xmin = start_date, xmax = stop_date,
+#                                          ymin = -Inf, ymax = Inf, fill = factor(set)), alpha = 0.7)
+
+df_plot_zero_line <- data.frame(Type = c("time series", "detrended"),
+                                mu_line = c(NA, 0))
+
+gg <- ggplot()
+# gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+#                                             ymin = -Inf, ymax = Inf, fill = factor(`True uptrend`)), alpha = 0.7)
+# gg <- gg + scale_fill_manual(values = c("magenta", "green"))
+gg <- gg + geom_rect(data = df_upTrnds, aes(xmin = UpStartDate, xmax = UpStopDate,
+                                            ymin = -Inf, ymax = Inf, fill = `Pct. Change/Time`), alpha = 0.7)
+gg <- gg + scale_fill_gradient2(low = "darkmagenta", mid = "khaki2", high = "green")
+gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype), lwd = 1)
+gg <- gg + geom_hline(data = df_plot_zero_line, aes(yintercept = mu_line))
+gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+gg <- gg + theme(legend.position = "none")
+gg
