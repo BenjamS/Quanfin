@@ -1,0 +1,1715 @@
+---
+title: "Global picture"
+author: "Ben Schiek"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    number_sections: true
+    latex_engine: xelatex
+mainfont: Garamond
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE)
+
+library(tidyverse)
+library(tidyquant)
+library(WaveletComp)
+library(patchwork)
+library(kableExtra)
+library(xtable)
+#========================================================================
+# Define functions
+#========================================================================
+fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead = 30){
+  n_t <- length(ts)
+  t <- 1:n_t
+  n_max_periods <- min(n_max_periods, length(per_vec))
+  regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
+  this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+  linmod <- lm(this_formula)
+  summod <- summary(linmod)
+  #summod
+  pvals <- as.numeric(summod$coefficients[, 4])
+  ind_rm <- which(pvals > pval_thresh)
+  round <- 0
+  while(length(ind_rm) > 0){
+    round <- round + 1
+    print(paste("round ", round))
+    if(round == 7){
+      print("Too many rounds, aborting.")
+      break
+    }
+    regrsrs_char <- strsplit(as.character(regrsrs), " \\+ ")[[1]]
+    regrsrs_char <- regrsrs_char[-ind_rm]
+    regrsrs <- paste(regrsrs_char, collapse = " + ")
+    this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
+    linmod <- lm(this_formula)
+    #---------------------
+    summod <- summary(linmod)
+    #print(summod)
+    pvals <- as.numeric(summod$coefficients[, 4])
+    ind_rm <- which(pvals > pval_thresh)
+  }
+  fitted_wave <- fitted(linmod)
+  
+  t <- (n_t + 1):(n_t + n_lookAhead)
+  regrsrs_fut <- names(linmod$coefficients)
+  #regrsrs_fut <- gsub("t", "t_fut", regrsrs_fut)
+  list_fut <- list()
+  for(i in 1:length(regrsrs_fut)){
+    list_fut[[i]] <- eval(parse(text = regrsrs_fut[i]))
+  }
+  df_fut <- as.data.frame(do.call(cbind, list_fut))
+  predict_wave <- predict(linmod, df_fut, interval = "prediction")  
+  print(summod)
+
+  list_out <- list(fitted_wave, predict_wave, summod)
+  return(list_out)
+}
+#========================================================================
+plot_validation <- function(yhat, ypredict, df_wave){
+  df_plot <- df_wave
+  df_plot$yhat <- c(yhat, ypredict[, 1])
+  df_plot$set <- NA
+  df_plot$set[ind_fit] <- "fit"
+  df_plot$set[ind_test] <- "test"
+  df_plot$yhat_p <- df_plot$p + df_plot$yhat
+  df_plot <- df_plot %>% gather(Type, Value, p:yhat_p)
+  df_plot$Value <- as.numeric(df_plot$Value)
+  #unique(df_plot$Type)
+  df_plot_ts <- subset(df_plot, Type %in% c("p", "ema", "yhat_p"))
+  df_plot_ts_dtFit <- subset(df_plot, Type %in% c("dt", "yhat"))
+
+  n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
+  n_types_ts <- length(unique(df_plot_ts$Type))
+  distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit + n_types_ts)
+  colors_dtFit <- distinct_colors[1:n_types_fit]
+  colors_ts <- distinct_colors[(n_types_fit + 1):(n_types_fit + n_types_ts)]
+  
+  df_plot_dt <- subset(df_plot_ts_dtFit, Type == "dt")
+  df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
+  
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
+  gg <- gg + scale_color_manual(values = colors_dtFit)
+  gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1, color = "violet")
+  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + theme_bw()
+  gg <- gg + theme(axis.title = element_blank(),
+                   legend.title = element_blank(),
+                   #legend.position = "top",
+                   axis.text.x = element_blank(),
+                   axis.ticks.x = element_blank())
+  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  gg_dtFit <- gg
+  
+  df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
+  df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date, y = Value, group = Type, color = Type))
+  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date, y = Value, color = Type), lwd = 1.1)
+  gg <- gg + scale_color_manual(values = colors_ts)
+  gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], color = "violet", lwd = 1)
+  gg <- gg + theme_bw()
+  gg <- gg + theme(axis.title = element_blank(),
+                   #legend.position = "bottom",
+                   legend.title = element_blank())
+  gg_ts <- gg
+  
+  gg_together <- gg_dtFit + gg_ts + plot_layout(ncol = 1, heights = c(2, 1))
+  
+  print(gg_together)
+}
+#========================================================================
+plot_prediction <- function(yhat, ypredict, df_wave){
+  n_end <- nrow(df_wave)
+  df_wave$yhat <- yhat
+  df_wave$set <- "fit"
+  df_wave$t <- NULL
+  date_fut <- seq(as.Date(df_wave$date[nrow(df_wave)] + 1), as.Date(df_wave$date[nrow(df_wave)] + 2 * n_lookAhead), by = 1)
+  date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
+  #length(date_fut)
+  date_fut <- date_fut[1:n_lookAhead]
+  df_add <- data.frame(date = date_fut, p = NA, ema = NA, dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_wave <- rbind(df_wave, df_add)
+  df_plot <- df_wave
+  df_plot <- df_plot %>% gather(Type, Value, p:yhat)
+  #unique(df_plot$Type)
+  df_plot_ts_dtFit <- subset(df_plot, Type %in% c("dt", "yhat"))
+  n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
+  distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit)
+  colors_dtFit <- distinct_colors
+  
+  df_plot_dt <- subset(df_plot_ts_dtFit, Type == "dt")
+  df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
+  gg <- gg + scale_color_manual(values = colors_dtFit)
+  gg <- gg + geom_vline(xintercept = df_plot$date[n_end], lwd = 1, color = "violet")
+  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + theme_bw()
+  gg <- gg + theme(axis.title = element_blank(),
+                   legend.title = element_blank(),
+                   #legend.position = "top",
+                   axis.ticks.x = element_blank())
+  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  print(gg)
+}
+#========================================================================
+get_cycles <- function(waveAnalysis){
+  df_periodogram <- data.frame(period = waveAnalysis$Period, power = waveAnalysis$Power.avg)
+  ind_critPoints <- findPeaks(df_periodogram$power)
+  critPers <- df_periodogram$period[ind_critPoints]
+  critPers
+  #-------------------
+  gg <- ggplot(df_periodogram, aes(x = period, y = power))
+  gg <- gg + geom_line()
+  gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.5)
+  gg <- gg + theme_bw()
+  print(gg)
+  #-------------------
+  # Get periods, ordered from most power to least
+  critPwrs <- df_periodogram$power[ind_critPoints]
+  ind_order <- order(critPwrs, decreasing = T)
+  per_vec <- critPers[ind_order]
+  pwr_vec <- critPwrs[ind_order]
+  df_mainCycles <- data.frame(Num = c(1:length(per_vec)), Period = per_vec, Power = pwr_vec)
+  #-------------------
+  return(df_mainCycles)
+  
+}
+#========================================================================
+signals_from_noise <- function(mat_pctDiff,
+                               fig_title_eigDens = NULL,
+                               fun_env = NULL){
+  
+  if(is.null(fun_env)){
+    eigenvalue_density_plot = T
+    pca_var_plot = T
+    pca_ind_plot = T
+    group_info = NULL
+    quietly = F
+  }else{
+    eigenvalue_density_plot = fun_env[[1]]
+    pca_var_plot = fun_env[[2]]
+    pca_ind_plot = fun_env[[3]]
+    group_info = fun_env[[4]]
+    quietly = fun_env[[5]]
+    
+  }
+  #---------------------------------------------------------
+  # Separate signals from noise
+  #---------------------------------------------------------
+  res <- FactoMineR::PCA(mat_pctDiff, ncp = ncol(mat_pctDiff), graph = F)
+  eigvals <- as.data.frame(res$eig)$eigenvalue
+  eigval_max <- max(eigvals)
+  mat_loads <- res$var$coord
+  mat_loads_rot <- varimax(mat_loads)[[1]]
+  mat_eigvecs <- mat_loads %*% diag(1 / sqrt(eigvals))
+  #---------------------------------------------------------
+  # Apply random matrix theory () to determine eigenvalue distribution of a 
+  # correlation matrix of random data.
+  n_obs <- nrow(mat_pctDiff)
+  n_items <- ncol(mat_pctDiff)
+  Q <- n_obs / n_items
+  s_sq <- 1 - eigval_max / n_items
+  #s_sq <- 1
+  eigvals_rand_max <- s_sq * (1 + 1 / Q + 2 / sqrt(Q))
+  eigvals_rand_min <- s_sq * (1 + 1 / Q - 2 / sqrt(Q))
+  eigvals_rand <- seq(eigvals_rand_min, eigvals_rand_max, length.out = n_items)
+  eigvals_rand_density <- Q / (2 * pi * s_sq) * sqrt((eigvals_rand_max - eigvals_rand) * (eigvals_rand - eigvals_rand_min)) / eigvals_rand
+  #---------------------------------------------------------
+  # Plot eigenvalue density vs. random matrix eigenvalue density
+  df_plot_data <- data.frame(Eigenvalue = eigvals, Type = "Data")
+  df_plot_rand <- data.frame(Eigenvalue = eigvals_rand, Type = "Random")
+  df_plot <- rbind(df_plot_data, df_plot_rand)
+  
+  if(eigenvalue_density_plot){
+    #if(is.null(fig_title_eigDens)){fig_title_eigDens <- "Eigenvalue density"}
+    gg <- ggplot(df_plot, aes(x = Eigenvalue, fill = Type))
+    gg <- gg + geom_density(alpha = .3)
+    gg <- gg + theme(axis.title.y = element_blank(),
+                     axis.text.y = element_blank(),
+                     axis.title.x = element_text(size = 9),
+                     #plot.caption = element_text(size = 9, hjust = 0),
+                     legend.title = element_blank(),
+                     legend.text = element_text(size = 9))
+    #gg <- gg + labs(caption = fig_title_eigDens)
+    print(gg)
+    
+    # gg <- ggplot()
+    # gg <- gg + geom_density(data = df_plot, aes(x = Eigenvalues, color = "Correlation Matrix"), lwd = 1.1)
+    # gg <- gg + geom_line(data = data.frame(x = eigvals_rand, y = eigvals_rand_density), aes(x = x, y = y, color = "Random matrix"), lwd = 1.1)
+    # gg <- gg + scale_colour_manual(name = "density", 
+    #                                values = c(`Correlation Matrix` = "blue", `Random matrix` = "magenta"))
+  }
+  #---------------------------------------------------------
+  # Which data eigenvalues can be meaningfully distinguished from noise?
+  ind_deviating_from_noise <- which(eigvals > eigvals_rand_max) # (eigvals_rand_max + 5 * 10^-1))
+  #---------------------------------------------------------
+  # Extract signal loadings matrix from noise
+  mat_loads_sig <- mat_loads[, ind_deviating_from_noise]
+  eigvals_sig <- eigvals[ind_deviating_from_noise]
+  mat_loads_rot_sig <- mat_loads_rot[, ind_deviating_from_noise]
+  #---------------------------------------------------------
+  n_signals <- length(eigvals_sig)
+  if(!quietly){
+    print(paste("Number of signals: ", n_signals))
+    print(paste("Max eigenvalue of random matrix:", eigvals_rand_max))
+    print("Eigenvalues greater than max eigenvalue of random matrix:")
+    print(ind_deviating_from_noise)
+    print(eigvals[ind_deviating_from_noise])
+    }
+  #---------------------------------------------------------
+  # Get dimensionally reduced version of original input data
+  mat_eigvecs_sig <- mat_eigvecs[, ind_deviating_from_noise]
+  mat_inData_sig <- mat_pctDiff %*% mat_eigvecs_sig
+  if(n_signals == 1){
+    mat_inData_sig <- mat_inData_sig / eigvals_sig
+  }else{
+    mat_inData_sig <- mat_inData_sig %*% diag(1 / eigvals_sig)
+  }
+  #---------------------------------------------------------
+  # Set sign of eigenvectors such that they
+  # best conform to the input time series
+  inData_avg <- rowMeans(mat_pctDiff)
+  # if(n_signals == 1){
+  #   mse <- mean((mat_inData_sig - inData_avg)^2)
+  #   mse_neg <- mean((-mat_inData_sig - inData_avg)^2)
+  #   if(mse_neg < mse){
+  #     mat_eigvecs <- -mat_eigvecs
+  #     mat_inData_sig <- -mat_inData_sig
+  #     mat_loads_rot_sig <- -mat_loads_rot_sig
+  #   }
+  # }else{
+  #   for(i in 1:n_signals){
+  #     mse <- mean((mat_inData_sig[, i] - inData_avg)^2)
+  #     mse_neg <- mean((-mat_inData_sig[, i] - inData_avg)^2)
+  #     if(mse_neg < mse){
+  #       mat_eigvecs_sig[, i] <- -mat_eigvecs_sig[, i]
+  #       mat_inData_sig[, i] <- -mat_inData_sig[, i]
+  #       mat_loads_rot_sig[, i] <- -mat_loads_rot_sig[, i]
+  #     }
+  #   }
+  #   
+  # }
+  
+  #---------------------------------------------------------
+  # PCA cluster plots to examine natural grouping in the data
+  #---------------------------------------------------------
+  # By variable
+  if(pca_var_plot){
+    if(n_signals == 1){
+      print("Only 1 signal, can't do PCA plots.")
+    }else{
+      gg <- factoextra::fviz_pca_var(res, habillage = factor(group_vec))
+      print(gg)
+    }
+    
+  }
+  #---------------------------------------------------------
+  # By individual
+  if(pca_ind_plot){
+    if(n_signals == 1){
+      print("Only 1 signal, can't do PCA plots.")
+    }else{
+      res <- FactoMineR::PCA(t(mat_pctDiff), graph = F)
+      gg <- factoextra::fviz_pca_ind(res, habillage = factor(group_vec), addEllipses = T)
+      print(gg)
+    }
+    
+  }
+  #---------------------------------------------------------
+  # Cluster plot using Mclust()
+  # mc <- mclust::Mclust(t(mat_pctDiff))
+  # summary(mc)
+  # View(mc$classification)
+  # factoextra::fviz_cluster(mc, frame.type = "norm", geom = "text")
+  #---------------------------------------------------------
+  
+  
+  list_out <- list(mat_loads_sig, mat_loads_rot_sig, mat_loads, mat_loads_rot, mat_inData_sig, eigvals_sig, mat_eigvecs_sig, eigvals, mat_eigvecs)
+  return(list_out)
+}
+#=======================================================================
+plot_signals_against_avg <- function(mat_inData_sig, mat_inData,
+                                     fig_title = NULL, facet_ncol = 1){
+  # (mat_inData = mat_pctDiff)
+  #---------------------------------------------------------
+  # Dimensionally reduced plot of data (signal plots)
+  #---------------------------------------------------------
+  n_signals <- ncol(mat_inData_sig)
+  #if(is.null(fig_title)){fig_title <- "Signals"}
+  #---------------------------------------------------------
+  # Plot signal data against average
+  inData_avg <- rowMeans(mat_inData)
+  date_vec <- row.names(mat_inData)
+  df_plot1 <- data.frame(Date = date_vec, inData_avg)
+  df_plot2 <- data.frame(Date = date_vec, mat_inData_sig)
+  df_plot1$Date <- factor(format(df_plot1$Date, format = "%y-%m-%d%"), ordered = T)
+  df_plot2$Date <- factor(format(df_plot2$Date, format = "%y-%m-%d%"), ordered = T)
+  xAxis_labels <- df_plot1$Date[seq(1, nrow(df_plot1), length.out = 5)]
+  signal_id <- paste("Signal", c(1:n_signals))
+  colnames(df_plot2)[2:(n_signals + 1)] <- signal_id
+  gathercols <- signal_id
+  df_plot2 <- df_plot2 %>% gather_("Signal", "Value", gathercols)
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot1, aes(x = Date, y = inData_avg, group = 1), color = "orange", lwd = 2)
+  gg <- gg + geom_line(data = df_plot2, aes(x = Date, y = Value, group = 1))
+  gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+  gg <- gg + facet_wrap(~ Signal, ncol = facet_ncol)
+  gg <- gg + theme(axis.title.y = element_blank(),
+                   axis.title.x = element_blank(),
+                   axis.text.x = element_text(size = 9),
+                   strip.text = element_text(size = 9)
+                   #plot.caption = element_text(size = 10, hjust = 0)
+  )
+  #gg <- gg + labs(caption = fig_title)
+  print(gg)
+  
+  
+}
+#=======================================================================
+interpret_loadings <- function(mat_loads_rot_sig, fig_title = NULL, fun_env = NULL){
+  #---------------------------------------------------------
+  if(is.null(fig_title)){fig_title = "Each item's contribution to each signal"}
+  if(is.null(fun_env)){
+    group_info = NULL
+    signal_names = NULL
+    group_colors = NULL
+  }else{
+    group_info = fun_env[[1]]
+    signal_names = fun_env[[2]]
+    group_colors = fun_env[[3]]
+  }
+  #---------------------------------------------------------
+  # Handle case where there's just 1 signal
+  # (In such cases, mat_loads_rot_sig will be of class "numeric")
+  if(class(mat_loads_rot_sig) == "numeric"){
+    n_items <- length(mat_loads_rot_sig)
+    n_signals <- 1
+    varNames_ordered <- names(mat_loads_rot_sig)
+  }
+  if(class(mat_loads_rot_sig) == "matrix"){
+    n_items <- nrow(mat_loads_rot_sig)
+    n_signals <- ncol(mat_loads_rot_sig)
+    varNames_ordered <- row.names(mat_loads_rot_sig)
+  }
+  #------------------------------------------------------------
+  # Plot loadings barcharts
+  df_plot <- data.frame(id = varNames_ordered, mat_loads_rot_sig)
+  #--------------
+  # Name the signals, if names provided
+  if(is.null(signal_names)){
+    signal_id <- paste("Signal", c(1:n_signals))
+  }else{
+    signal_id <- signal_names
+  }
+  #--------------
+  colnames(df_plot)[2:(n_signals + 1)] <- signal_id
+  gathercols <- as.character(signal_id) 
+  df_plot <- gather_(df_plot, "Signal", "Loading", gathercols)
+  df_plot <- transform(df_plot,
+                       Signal = factor(Signal, levels = gathercols))
+  #--------------
+  # Group the vars if group info is provided
+  if(!is.null(group_info)){
+    list_groups <- group_info[[1]]
+    group_names <- group_info[[2]]
+    group_vec <- rep(NA, n_items)
+    for(i in 1:length(list_groups)){
+      this_group_vec <- list_groups[[i]]
+      this_group_name <- group_names[i]
+      group_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_name
+    }
+    #--------------
+    df_plot$Type <- factor(group_vec)
+    xx <- df_plot$Type
+    df_plot$id <- factor(df_plot$id, levels = unique(df_plot$id[order(xx)]))
+    gg <- ggplot(df_plot, aes(x = id, y = Loading, fill = Type))
+    gg <- gg + scale_fill_manual(values = group_colors)
+  }else{
+    gg <- ggplot(df_plot, aes(x = id, y = Loading))
+  }
+  gg <- gg + geom_bar(stat = "identity", color = "black", position = "dodge")
+  gg <- gg + facet_wrap(~ Signal, nrow = 1)
+  gg <- gg + theme(axis.text.y = element_text(size = 9),
+                   axis.text.x = element_text(size = 9),
+                   axis.title.y = element_blank(),
+                   axis.title.x = element_text(size = 9),
+                   legend.title = element_blank(),
+                   legend.text = element_text(size = 9)
+                   #plot.caption = element_text(size = 10, hjust = 0)
+  )
+  #gg <- gg + labs(caption = fig_title)
+  gg <- gg + coord_equal()
+  gg <- gg + coord_flip()
+  print(gg)
+  
+}
+#========================================================================
+#========================================================================
+#========================================================================
+# End function definition
+#========================================================================
+#========================================================================
+#========================================================================
+
+spy_sector_symbs <- c("XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
+                      "XLU", "XLI", "XBI", "IYT") #"TTEK"
+spy_sector_detail <- c("Financials", "Communications", "Luxury goods", "Staple goods",
+                       "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
+                       "Biotechnology", "Transportation") #"Gov. foreign aid"
+minerals_symbs <- c("GLD", "SLV", "PPLT", "JJC", "JJM") #"XME"
+minerals_detail <- c("Gold", "Silver", "Platinum", "Copper", "Industrial metals") #"US metals and mining"
+agriculture_symbs <- c("JJG", "BAL", "SOYB", "SGG", "JO", "NIB", "DBA")
+agriculture_detail <- c("Grains", "Cotton", "Soybean", "Sugar", "Coffee", "Cacao", "General agriculture")
+energy_symbs <- c("WTI", "FUE", "WOOD", "ICLN", "KOL", "UNG")
+energy_detail <- c("Oil (W&T Offshore Inc.)", "Biofuels", "Timber", "Clean energy", "Coal", "US natural gas")
+#currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
+#currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
+currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
+                    "GBPUSD=X", "AUDUSD=X", "INR=X")
+currency_detail <- c("EUR/USD", "USD/JPY",
+                     "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
+emerg_mkt_symbs <- c("EMLC", "ELD", "BKF", "VWOB")
+emerg_mkt_detail <- c("Emerg mkts debt", "Emerg mkts gov. bonds", "BRIC countries", "Emerging mkt currencies")
+crypto_symbs <- c("BLOK", "LEGR", "BCNA")
+crypto_detail <- c("Blockchain tech.", "Blockchain companies", "Blockchain in China")
+Tbond_symbs <- c("IEI", "IEF", "TLT")#, "BIL"
+Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs") #"T-bond 1-3 months"
+
+ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+ts_detail_vec <- c(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+df_symb_detail <- data.frame(symbol = ts_symb_vec, detail = ts_detail_vec)
+#--
+#length(ts_symb_vec)
+#--
+# list_groups <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+#                      currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+#-------------------------------------------
+# Create grouping info for plots (required input into functions)
+list_groups <- list(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+                    currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+group_names <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currency Pairs",
+                 "Emerging Markets", "Cryptocurrencies/\nBlockchain", "T-Bonds")
+group_info <- list(list_groups, group_names)
+n_groups <- length(group_names)
+#-------------------------------------------
+#per_ema <- 13
+fromdate <- Sys.Date() - 360
+todate <- Sys.Date()
+# fromdate = "2018-06-20"
+# todate = "2019-08-09"
+tbl_ohlcv <- tq_get(ts_symb_vec, get = "stock.prices", from = fromdate, to = todate)
+df_ohlcv <- as.data.frame(tbl_ohlcv)
+#--
+# Crypto ts can have duplicate date entries sometimes (BTC-USD)
+# Get rid of these duplicates, if any
+df_ohlcv <- as.data.frame(df_ohlcv %>% group_by(symbol) %>% mutate(dup = duplicated(date)))
+df_ohlcv <- subset(df_ohlcv, dup == F)
+df_ohlcv$dup <- NULL
+#--
+
+#df_ohlcv$p <- rowSums(df_ohlcv[, c(4:6)]) / 3
+#--
+#df <- df_ohlcv[, c("date", "symbol", "p")]
+# df <- df_ohlcv %>% group_by(symbol) %>% tq_transmute(select = adjusted, 
+#                      mutate_fun = periodReturn, 
+#                      period     = "monthly")
+#--
+df <- df_ohlcv[, c("date", "symbol", "adjusted")]
+df <- df %>% spread(symbol, adjusted)
+ind_shift <- which(colnames(df) %in% currency_symbs)
+df[, ind_shift] <- rbind(rep(NA, length(ind_shift)), df[-nrow(df), ind_shift])
+df <- df[-c(1, nrow(df)), ]
+date_vec <- df$date
+mat_ts_dy <- na.approx(df[, -1])
+
+#o <- apply(mat_ts_dy, 2, function(x) length(which(is.na(x))))
+#table(o)
+#which(o==1)
+#xts_ts_dy <- xts(mat_ts_dy, date_vec)
+#date_vec <- index(xts_ts_dy)
+#-----
+mat_pctDiff_dy <- diff(mat_ts_dy) / mat_ts_dy[-nrow(mat_ts_dy), ]
+#mat_pctDiff_dy <- diff(log(mat_ts_dy))
+row.names(mat_pctDiff_dy) <- as.character(date_vec[-1])
+ts_avg_dy <- rowMeans(mat_pctDiff_dy)
+mu_ret_dy <- colMeans(mat_pctDiff_dy)
+sd_ret_dy <- apply(mat_pctDiff_dy, 2, sd)
+
+mat_ts_wk <- to.weekly(xts(mat_ts_dy, date_vec), OHLC = F)
+mat_pctDiff_wk <- diff(mat_ts_wk) / mat_ts_wk[-nrow(mat_ts_wk), ]
+mat_pctDiff_wk <- as.matrix(mat_pctDiff_wk[-1, ])
+ts_avg_wk <- rowMeans(mat_pctDiff_wk)
+mu_ret_wk <- colMeans(mat_pctDiff_wk)
+sd_ret_wk <- apply(mat_pctDiff_wk, 2, sd)
+
+mat_ts_mo <- to.monthly(xts(mat_ts_dy, date_vec), OHLC = F)
+mat_pctDiff_mo <- diff(mat_ts_mo) / mat_ts_mo[-nrow(mat_ts_mo), ]
+mat_pctDiff_mo <- as.matrix(mat_pctDiff_mo[-1, ])
+ts_avg_mo <- rowMeans(mat_pctDiff_mo)
+mu_ret_mo <- colMeans(mat_pctDiff_mo)
+sd_ret_mo <- apply(mat_pctDiff_mo, 2, sd)
+#----------------------------------------------
+# Compare histograms of daily, weekly, and monthly returns
+# df_plot <- data.frame(ts_id = names(mu_ret_dy), mu_ret_dy, mu_ret_wk, mu_ret_mo)
+# colnames(df_plot)[-1] <- c("Mean Daily Return", "Mean Weekly Return", "Mean Monthly Return")
+# gathercols <- colnames(df_plot)[-1]
+# df_plot <- df_plot %>% gather_("Return Type", "Value", gathercols)
+# #gg <- ggplot(df_plot, aes(Value, fill = `Return Type`))
+# gg <- ggplot(df_plot, aes(Value))
+# gg <- gg + geom_density(alpha = 0.4)
+# gg <- gg + facet_wrap(~`Return Type`, nrow = 1, scales = "free")
+# #gg <- gg + coord_cartesian(xlim = c(-0.02, 0.02))
+# gg
+#----------------------------------------------
+#ind_rm_ema <- 1:(per_ema - 1)
+# mat_pctDiff <- apply(mat_pctDiff, 2, function(x) x - EMA(x, per_ema))
+# mat_pctDiff <- mat_pctDiff[-ind_rm_ema, ]
+# date_vec <- df$date[-c(ind_rm_ema, ind_rm_na)]
+#----------------------------------------------
+mat_ts_in <- mat_ts_dy
+ts_avg_in <- ts_avg_dy
+# nab_pctRet_in <- mu_ret_dy
+# sd_ret_in <- sd_ret_dy
+#----------------------------------------------
+mat_pctDiff <- mat_pctDiff_dy
+date_vec <- row.names(mat_pctDiff)
+#length(date_vec)
+row.names(mat_pctDiff) <- as.character(date_vec)
+colnames(mat_pctDiff) <- as.character(df_symb_detail$detail[order(df_symb_detail$symbol)])
+#----------------------------------------------
+check_on_data <- F
+if(check_on_data){
+  df_plot <- as.data.frame(mat_pctDiff)
+  gathercols <- colnames(df_plot)
+  df_plot$Date <- date_vec
+  df_plot <- df_plot %>% gather_("Security", "Weekly change (%)", gathercols)
+  df_plot$Type <- NA
+  df_plot$Type[which(df_plot$Security %in% spy_sector_detail)] <- "US Sectors"
+  df_plot$Type[which(df_plot$Security %in% minerals_detail)] <- "Minerals"
+  df_plot$Type[which(df_plot$Security %in% agriculture_detail)] <- "Agriculture"
+  df_plot$Type[which(df_plot$Security %in% energy_detail)] <- "Energy"
+  df_plot$Type[which(df_plot$Security %in% currency_detail)] <- "Major Currency Pairs"
+  df_plot$Type[which(df_plot$Security %in% emerg_mkt_detail)] <- "Emerging Markets"
+  df_plot$Type[which(df_plot$Security %in% crypto_detail)] <- "Cryptocurrencies/\nBlockchain"
+  df_plot$Type[which(df_plot$Security %in% Tbond_detail)] <- "T-bonds"
+  #------------------------------------------------------------
+  # gg <- ggplot(df_plot, aes(x = Year, y = Value, group = Security, color = Security))
+  # gg <- gg + geom_line()
+  # gg <- gg + facet_wrap(~ Type, nrow = 3, scales = "free")
+  # gg <- gg + theme(legend.position = "none")
+  # gg
+  #------------------------------------------------------------
+  this_type <- "US Sectors"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Minerals"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Agriculture"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Energy"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Major Currency Pairs"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Emerging Markets"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "Cryptocurrencies/Blockchain"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+  this_type <- "T-bonds"
+  df_plot2 <- subset(df_plot, Type == this_type)
+  gg <- ggplot(df_plot2, aes(x = Date, y = `Weekly change (%)`, group = Security, color = Security))
+  gg <- gg + geom_line(lwd = 1.1)
+  gg <- gg + geom_point(size = 2)
+  gg <- gg + labs(title = this_type)
+  gg
+}
+
+```
+
+
+```{r, fig.show = 'hold', fig.cap="\\label{fig:hReturns}Historical (top) daily returns and (bottom) period return, train and test data.", fig.width=8, fig.height=12, fig.align='left', echo=FALSE}
+
+# Define grouping function
+group_cols <- function(mat_pctDiff, group_info, group_colors = NULL, reverse_order = F){
+  if(is.null(group_colors)){
+    group_colors <- randomcoloR::distinctColorPalette(k = length(group_names))
+    #group_colors <- viridis::viridis_pal(option = "D")(length(group_names))
+  }
+  if(reverse_order){group_colors <- rev(group_colors)}
+  list_groups <- group_info[[1]]
+  group_names <- group_info[[2]]
+  n_groups <- length(list_groups)
+  n_items <- ncol(mat_pctDiff)
+  varNames_ordered <- colnames(mat_pctDiff)
+  group_vec <- rep(NA, n_items)
+  group_color_vec <- rep(NA, n_items)
+  for(i in 1:n_groups){
+    this_group_vec <- list_groups[[i]]
+    this_group_name <- group_names[i]
+    this_group_color <- group_colors[i]
+    group_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_name
+    group_color_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_color
+  }
+  ind_ordered_cols <- order(factor(group_vec))
+  cols_ordered_by_group <- as.character(colnames(mat_pctDiff)[ind_ordered_cols])
+  group_color_vec <- group_color_vec[ind_ordered_cols]
+  group_vec_ordered <- group_vec[ind_ordered_cols]
+  out_list <- list(cols_ordered_by_group, group_color_vec, group_vec_ordered, ind_ordered_cols)
+  return(out_list)
+}
+# Define historical returns and box-whiskers plotting function. The latter is for visually assessing the standard deviation of each portfolio item
+historical_returns_and_boxplot <- function(mat_pctDiff,
+                                           mat_pctDiff_test = NULL,
+                                           group_info,
+                                           group_colors){
+  #------------------------------------------------------------
+  # Group the vars according to provided group info
+  outlist <- group_cols(mat_pctDiff, group_info, group_colors)
+  cols_ordered_by_group <- outlist[[1]]
+  group_color_vec <- outlist[[2]]
+  group_vec_ordered <- outlist[[3]]
+  ind_ordered_cols <- outlist[[4]]
+  #------------------------------------------------------------
+  # Get date info
+  from_date <- row.names(mat_pctDiff)[1]
+  to_date <- row.names(mat_pctDiff)[nrow(mat_pctDiff)]
+  from_date <- gsub("-", "/", from_date)
+  to_date <- gsub("-", "/", to_date)
+  date_interval <- paste(from_date, to_date, sep = " - ")
+  fig_subtitle_returns <- date_interval
+  #------------------------------------------------------------
+  # Get returns
+  nab_pctRet <- apply(mat_pctDiff, 2, function(x) prod(1 + x)) - 1
+  #------------------------------------------------------------
+  df_plot <- data.frame(Returns = nab_pctRet)
+  df_plot$id <- row.names(df_plot)
+  df_plot <- df_plot[ind_ordered_cols, ]
+  df_plot$Type <- factor(group_vec_ordered)
+  df_plot$id <- factor(df_plot$id, levels = cols_ordered_by_group)
+  #------------------------------------------------------------
+  # Get same for test dataset, if provided
+  if(!is.null(mat_pctDiff_test)){
+    #------
+    data_type_train <- paste("Train data ", date_interval)
+    df_plot$Dataset <- data_type_train
+    #------
+    from_date <- row.names(mat_pctDiff_test)[1]
+    to_date <- row.names(mat_pctDiff_test)[nrow(mat_pctDiff_test)]
+    from_date <- gsub("-", "/", from_date)
+    to_date <- gsub("-", "/", to_date)
+    date_interval <- paste(from_date, to_date, sep = " - ")
+    data_type_test <- paste("Backtest data ", date_interval)
+    #------------------------------------------------------------
+    nab_pctRet_test <- apply(mat_pctDiff_test, 2, function(x) prod(1 + x)) - 1
+    #------------------------------------------------------------
+    df_plot_test <- data.frame(Returns = nab_pctRet_test, Dataset = data_type_test)
+    df_plot_test$id <- row.names(df_plot_test)
+    df_plot_test <- df_plot_test[ind_ordered_cols, ]
+    df_plot_test$Type <- factor(group_vec_ordered)
+    df_plot_test$id <- factor(df_plot_test$id, levels = cols_ordered_by_group)
+    df_plot <- as.data.frame(rbind(df_plot, df_plot_test))
+    df_plot$Dataset <- factor(df_plot$Dataset, levels = c(data_type_train, data_type_test))
+    
+  }
+  #------------------------------------------------------------
+  # Historical returns plot
+  #------------------------------------------------------------
+  colnames(df_plot)[1] <- "Period Return"
+  gg <- ggplot(df_plot, aes(x = id, y = `Period Return`, fill = Type))
+  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  gg <- gg + scale_fill_manual(values = group_colors)
+  gg <- gg + geom_bar(stat = "identity", color = "black", position = "dodge")
+  if(!is.null(mat_pctDiff_test)){
+    gg <- gg + facet_wrap(~Dataset, ncol = 1)
+  }
+  gg <- gg + labs(title = "Period Return")
+  gg <- gg + theme(axis.text.x = element_text(size = 9, angle = 60, hjust = 1),
+                   #axis.text.x = element_blank(),
+                   axis.title.x = element_blank(),
+                   axis.text.y = element_text(size = 9),
+                   #axis.title.y = element_text(size = 9),
+                   axis.title.y = element_blank(),
+                   legend.position = "bottom",
+                   legend.title = element_blank(),
+                   legend.text = element_text(size = 9),
+                   plot.title = element_text(face = "bold", size = 9)
+  )
+  #  gg <- gg + coord_equal()
+  #  gg <- gg + coord_flip()
+  #print(gg)
+  gg_returns <- gg
+  #------------------------------------------------------------
+  # Box and whiskers plot
+  #------------------------------------------------------------
+  # Define df_plot prep function:
+  prep_df_for_boxplot <- function(mat_pctDiff, cols_ordered_by_group, group_info){
+    list_groups <- group_info[[1]]
+    group_names <- group_info[[2]]
+    df_plot <- as.data.frame(mat_pctDiff[, cols_ordered_by_group])
+    df_plot <- df_plot %>% gather_("id", "Daily Returns", colnames(df_plot))
+    df_plot$Type <- NA
+    for(i in 1:n_groups){
+      this_group <- list_groups[[i]]
+      ind <- which(df_plot$id %in% this_group)
+      df_plot$Type[ind] <- group_names[i]
+    }
+    df_plot$id <- factor(df_plot$id, levels = cols_ordered_by_group)
+    df_plot$Type <- factor(df_plot$Type)
+    return(df_plot)
+    
+  }
+  #------------------------------------------------------------
+  # Prepare df_plot
+  df_plot <- prep_df_for_boxplot(mat_pctDiff_train, cols_ordered_by_group, group_info)
+  if(!is.null(mat_pctDiff_test)){
+    df_plot$Dataset <- data_type_train
+    df_plot_test <- prep_df_for_boxplot(mat_pctDiff_test, cols_ordered_by_group, group_info)
+    df_plot_test$Dataset <- data_type_test
+    df_plot <- as.data.frame(rbind(df_plot, df_plot_test))
+    df_plot$Dataset <- factor(df_plot$Dataset, levels = c(data_type_train, data_type_test))
+  }
+  #------------------------------------------------------------
+  # Plot df_plot
+  gg <- ggplot(df_plot, aes(x = id, y = `Daily Returns`, fill = Type))
+  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  gg <- gg + scale_fill_manual(values = group_colors)
+  #gg <- gg + geom_bar(stat = "identity", color = "black", position = "dodge")
+  gg <- gg + geom_boxplot()
+  if(!is.null(mat_pctDiff_test)){
+    gg <- gg + facet_wrap(~Dataset, ncol = 1)
+  }
+  gg <- gg + labs(title = "Daily Returns")
+  gg <- gg + theme(#axis.text.x = element_text(size = 9, angle = 60, hjust = 1),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9),
+    #axis.title.y = element_text(size = 9),
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    # legend.title = element_blank(),
+    # legend.text = element_text(size = 9),
+    plot.title = element_text(face = "bold", size = 9))
+  gg_boxplot <- gg
+  #------------------------------------------------------------
+  gg_together <- gg_boxplot + gg_returns + plot_layout(ncol = 1, heights = c(2, 1))
+  print(gg_together)
+  
+}
+#=======================================================================
+# End function definition
+#=======================================================================
+ind_train <- 1:round(nrow(mat_pctDiff) * 2 / 3)
+ind_test <- setdiff(1:nrow(mat_pctDiff), ind_train)
+mat_pctDiff_train <- mat_pctDiff[ind_train, ]
+mat_pctDiff_test <- mat_pctDiff[ind_test, ]
+# ts_avg_test <- ts_avg_in[ind_test]
+# date_vec_test <- date_vec[ind_test]
+#group_colors <- RColorBrewer::brewer.pal(n = n_groups, "Dark2")
+# "Darjeeling"
+group_colors <- wesanderson::wes_palette("Darjeeling1", n = n_groups, type = "continuous")
+
+historical_returns_and_boxplot(mat_pctDiff_train,
+                               mat_pctDiff_test,
+                               group_info,
+                               group_colors = group_colors)
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+
+outlist <- group_cols(mat_pctDiff, group_info, group_colors, reverse_order = F)
+cols_ordered_by_group <- outlist[[1]]
+group_color_vec <- outlist[[2]]
+corr_colorRamp <- colorRampPalette(c("darkred", "white", "blue4"))(50)
+#cormat <- Hmisc::rcorr(mat_pctDiff_train[, cols_ordered_by_group])$r
+cormat <- cor(mat_pctDiff_train[, cols_ordered_by_group])
+#cormat <- cov(mat_pctDiff_train[, cols_ordered_by_group])
+corrplot::corrplot(cormat, is.corr = T, type = "lower", tl.col = group_color_vec, tl.srt = 30,
+                   col = corr_colorRamp)
+gridGraphics::grid.echo()
+p_corplot <- grid::grid.grab()
+#grid::grid.draw(gg_corplot)
+cormat <- cor(mat_pctDiff_test[, cols_ordered_by_group])
+#cormat <- cov(mat_pctDiff_test[, cols_ordered_by_group])
+corrplot::corrplot(cormat, is.corr = T, type = "lower", tl.col = group_color_vec, tl.srt = 30,
+                   col = corr_colorRamp)
+gridGraphics::grid.echo()
+p_corplot_test <- grid::grid.grab()
+
+```
+
+```{r, fig.show="hold", fig.cap="\\label{fig:corrMats}Correlation matrices, train and test data.", fig.width=7, fig.height=9, fig.align='center'}
+gridExtra::grid.arrange(p_corplot, p_corplot_test)
+
+```
+
+
+
+
+```{r, fig.show = 'hold', fig.width=4, fig.height=2, fig.align='center', fig.cap="\\label{fig:eigDens}Eigenvalue density plots for the financial data correlation matrix and a\ncorrelation matrix of a random dataset of the same dimensions.", echo=FALSE}
+fun_env = list(eigenvalue_density_plot = T,
+               pca_var_plot = F,
+               pca_ind_plot = F,
+               group_info,
+               quietly = T)
+# this_fig_title <- "Figure 4: Eigenvalue density plots for the financial data correlation matrix and a\ncorrelation matrix of a random dataset of the same dimensions."
+this_fig_title <- NULL
+list_out <- signals_from_noise(mat_pctDiff_train, fig_title_eigDens = this_fig_title, fun_env)
+# list_out <- list(mat_loads_sig, mat_loads_rot_sig, mat_loads, mat_loads_rot, mat_inData_sig, eigvals_sig, mat_eigvecs_sig, eigvals, mat_eigvecs)
+mat_loads_sig_train <- list_out[[1]]
+mat_loads_rot_sig_train <- list_out[[2]]
+mat_pctDiff_sig_train <- list_out[[5]]
+mat_eigvecs_sig_train <- list_out[[7]]
+```
+
+
+
+
+```{r, fig.show = 'hold', fig.width=6, fig.height=9, fig.cap="\\label{fig:sigs1}Signals (black lines) plotted against the average (yellow line), train data.", echo=FALSE}
+
+# this_fig_title <- "Figure 5: Signals (black lines) plotted against the average (yellow line), train data"
+this_fig_title <- NULL
+plot_signals_against_avg(mat_pctDiff_sig_train, mat_pctDiff_train,
+                         fig_title = this_fig_title,
+                         facet_ncol = 1)
+
+```
+
+
+```{r, fig.show='hold', fig.width=10, fig.height=7, fig.align='center', fig.cap="\\label{fig:loads}Signal loadings, train data.", echo=FALSE}
+
+# signal_names <- c("US / Emerg. Markets,\nEnergy, Blockchain", "Precious metals", "FOREX", "US Bonds", "Agriculture", "Industrial metals")
+signal_names <- NULL
+fun_env <- list(group_info, signal_names, group_colors)
+#this_fig_title <- "Figure 6: Signal loadings, train data"
+this_fig_title <- NULL
+interpret_loadings(mat_loads_sig_train, fig_title = this_fig_title, fun_env)
+
+```
+
+To further aid in analysis, an orthogonal varimax rotation is applied to the loadings matrix. The rotated loadings ($\tilde{L}_{\circlearrowright}$) are plotted in Figure \ref{fig:loadsRot}.
+
+```{r, fig.show='hold', fig.width=10, fig.height=7, fig.align='center', fig.cap="\\label{fig:loadsRot}Rotated signal loadings, train data.", echo=FALSE}
+
+#signal_names <- c("US / Emerg. Markets,\nEnergy, Blockchain", "Precious metals", "FOREX", "US Bonds", "Agriculture", "Industrial metals")
+signal_names <- NULL
+fun_env <- list(group_info, signal_names, group_colors)
+#this_fig_title <- "Figure 7: Rotated signal loadings, train data"
+this_fig_title <- NULL
+interpret_loadings(mat_loads_rot_sig_train, fig_title = this_fig_title, fun_env)
+
+```
+
+
+
+```{r, fig.show='hold', fig.width=10, fig.height=12, fig.align='center', fig.cap="\\label{fig:sigs2}Signals plotted against their respective highest loading items, train data.", echo=FALSE}
+#=======================================================================
+plot_signals_against_associated_items <- function(mat_loads_rot_sig,
+                                                  mat_pctDiff,
+                                                  mat_pctDiff_sig,
+                                                  load_threshold = 0.5,
+                                                  n_display_max = 5,
+                                                  fig_title = NULL){
+  #---------------------------------------------------------
+  #if(is.null(fig_title)){fig_title = "Signals plotted against their associated portfolio items"}
+  #---------------------------------------------------------
+  # Handle case where there's just 1 signal
+  # (In such cases, mat_loads_rot_sig will be of class "numeric")
+  if(class(mat_loads_rot_sig) == "numeric"){
+    n_signals <- 1
+  }
+  if(class(mat_loads_rot_sig) == "matrix"){
+    n_signals <- ncol(mat_loads_rot_sig)
+  }
+  #------------------------------------------------------------
+  date_vec <- row.names(mat_pctDiff)
+  xAxis_labels <- date_vec[seq(1, nrow(mat_pctDiff), length.out = 5)]
+  list_gg <- list()
+  for(i in 1:n_signals){
+    this_loadvec <- mat_loads_rot_sig[, i]
+    ind_tracks <- which(this_loadvec >= load_threshold)
+    #ind_tracks <- which(this_loadvec >= load_threshold | this_loadvec <= -load_threshold)
+    if(length(ind_tracks) == 0){
+      ind_tracks <- which(this_loadvec == max(this_loadvec))
+    }
+    mat_pctDiff_tracks <- mat_pctDiff[, ind_tracks]
+    #------------
+    n_display <- length(ind_tracks)
+    if(n_display > n_display_max){
+      n_to_omit <- n_display - n_display_max
+      random_omission <- sample(1:n_display, n_to_omit)
+      mat_pctDiff_tracks <- mat_pctDiff_tracks[, -random_omission]
+    }
+    #------------
+    df_plot_sig <- data.frame(Date = date_vec, Value = mat_pctDiff_sig[, i])
+    df_plot_tracks <- data.frame(Date = date_vec, mat_pctDiff_tracks)
+    if(ncol(df_plot_tracks) > 2){
+      gathercols <- colnames(mat_pctDiff_tracks)
+      colnames(df_plot_tracks)[-1] <- gathercols
+      df_plot_tracks <- df_plot_tracks %>% gather_("ts", "Value", gathercols)
+    }else{
+      colnames(df_plot_tracks)[-1] <- "Value"
+      df_plot_tracks$ts <- colnames(mat_pctDiff)[ind_tracks]
+    }
+    #-----
+    gg <- ggplot()
+    gg <- gg + geom_line(data = df_plot_sig, aes(x = Date, y = Value, group = 1), color = "grey", lwd = 1.3)
+    gg <- gg + geom_line(data = df_plot_tracks, aes(x = Date, y = Value, group = ts, color = ts))
+    gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+    if(i == n_signals){
+      gg <- gg + labs(title = paste("Signal", i), caption = fig_title)
+      gg <- gg + theme(#axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(size = 9)
+        #plot.caption = element_text(hjust = 0, size = 10)
+      )
+    }else{
+      gg <- gg + labs(title = paste("Signal", i))
+      gg <- gg + theme(axis.text.x = element_blank(),
+                       axis.title.x = element_blank(),
+                       axis.title.y = element_blank(),
+                       legend.title = element_blank(),
+                       plot.title = element_text(size = 9))
+    }
+    
+    list_gg[[i]] <- gg
+    
+  }
+  
+  gg_all <- wrap_plots(list_gg) + plot_layout(ncol = 1)
+  print(gg_all)
+  
+  
+}
+#=======================================================================
+#this_fig_title <- "Figure 8: Signals plotted with their respective highest loading items, train data"
+this_fig_title <- NULL
+plot_signals_against_associated_items(mat_loads_rot_sig_train,
+                                      mat_pctDiff_train,
+                                      mat_pctDiff_sig_train,
+                                      load_threshold = 0.5,
+                                      n_display_max = 6,
+                                      fig_title = this_fig_title)
+
+```
+
+
+```{r, fig.show='hold', fig.width=10, fig.height=4, fig.align='center', fig.cap="\\label{fig:mvConv}\\textit{(Left)} Optimal frontier and budget shares, unmodified MV Analysis. \\textit{(Right)} Backtest of the optimal frontier.", echo = FALSE}
+# Get backtest data
+fun_env = list(eigenvalue_density_plot = F,
+               pca_var_plot = F,
+               pca_ind_plot = F,
+               group_info,
+               quietly = T)
+list_out <- signals_from_noise(mat_pctDiff_test, fig_title_eigDens = NULL, fun_env)
+# list_out <- list(mat_loads_sig, mat_loads_rot_sig, mat_loads, mat_loads_rot, mat_inData_sig, eigvals_sig, mat_eigvecs_sig, eigvals, mat_eigvecs)
+mat_loads_sig_test <- list_out[[1]]
+mat_loads_rot_sig_test <- list_out[[2]]
+mat_pctDiff_sig_test <- list_out[[5]]
+#=======================================================================
+# Define portfolio optimization function
+optimize_portfolio <- function(cormat, mat_nab, targ_vec,
+                               utility_interpretation = F){
+  cormat_inv <- solve(cormat)
+  M <- t(mat_nab) %*% cormat_inv %*% mat_nab
+  M_inv <- solve(M)
+  #print(M)
+  x <- -2 * M_inv %*% targ_vec
+  # Risk shadow price
+  l_V <- 1 / x[1]
+  #if(l_V > 0){l_V <- -l_V}
+  #print(l_V)
+  # Budget shadow price (l_C = lambdas[2], l_R normalized to = 1)
+  lambdas <- l_V * x
+  l_C <- lambdas[2]
+  # Optimal budget shares
+  wStar <- -1 / (2 * l_V) * cormat_inv %*% mat_nab %*% lambdas
+  #print(sum(wStar))
+  # Portfolio variance
+  V <- t(wStar) %*% cormat %*% wStar
+  # Rtarg <- targ_vec[1]
+  Rtarg <- t(wStar) %*% mat_nab[, 1]
+  #----------------------------------------------------
+  # check <- t(lambdas) %*% targ_vec + 2*l_V * V
+  # print(check)
+  #----------------------------------------------------
+  # Utility function interpretation of equations
+  # (Makes all budget shares positive)
+  if(utility_interpretation){
+    Exp_wStar <- exp(wStar)
+    K <- sum(Exp_wStar)
+    wStar <- Exp_wStar / K
+    Rtarg <- t(wStar) %*% mat_nab[, 1]
+    V <- t(wStar) %*% cormat %*% wStar
+  } 
+  #if(l_V > 0){wStar <- rep(NA, length(wStar))}
+  list_out <- list(wStar, Rtarg, V, l_V, l_C)
+  return(list_out)
+  
+}
+#=======================================================================
+backtest_portfolio <- function(wStar, nab_pctRet_test, cormat_test,
+                               include_benchmark = F){
+  #----------------------------------------------------
+  # Backtest
+  R_test <- t(wStar) %*% nab_pctRet_test
+  V_test <- t(wStar) %*% cormat_test %*% wStar
+  if(include_benchmark){
+    # Benchmark portfolio
+    n_items <- ncol(cormat)
+    wBmark <- rep(1 / n_items, n_items)
+    R_test_bMark <- t(wBmark) %*% nab_pctRet_test
+    V_test_bMark <- t(wBmark) %*% cormat_test %*% wBmark
+  }else{
+    R_test_bMark <- NULL
+    V_test_bMark <- NULL
+  }
+  #----------------------------------------------------
+  outvec <- c(R_test, V_test, R_test_bMark, V_test_bMark)
+  return(outvec)
+  
+}
+#=======================================================================
+plot_frontier_wBacktest <- function(df_frontier,
+                                    df_backtest,
+                                    fig_title = NULL,
+                                    separate_plots = F){
+  #-------------------------------------------
+  n_points_on_frontier <- nrow(df_frontier)
+  color_vec <- c("#56B4E9", "black")
+  #-------------------------------------------
+  #if(is.null(fig_title)){fig_title <- "Optimal Portfolio Frontier"}
+  df_plot1 <- df_frontier[, c("Risk (variance)", "Return target")]
+  df_plot2 <- df_backtest[, c("Risk backtest", "Return backtest")]
+  df_plot1$Type <- "optimal frontier"
+  df_plot2$Type <- "Backtest of optimal frontier"
+  colnames(df_plot1)[2] <- "Return"
+  colnames(df_plot2)[1:2] <- c("Risk (variance)", "Return")
+  df_plot <- as.data.frame(do.call(rbind, list(df_plot1, df_plot2)))
+  if(separate_plots){
+    gg <- ggplot(df_plot, aes(x = `Risk (variance)`, y = `Return`))
+  }else{
+    gg <- ggplot(df_plot, aes(x = `Risk (variance)`, y = `Return`, group = Type, color = Type))
+  }
+  gg <- gg + geom_point()
+  if(separate_plots){
+    gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
+  }
+  gg <- gg + scale_color_manual(values = color_vec)
+  #gg <- gg + labs(title = fig_title)
+  #gg <- gg + theme(plot.title = element_text(size = 10))
+  gg <- gg + theme(legend.title = element_blank(),
+                   legend.position = "bottom")
+  gg <- gg + coord_cartesian(xlim = c(0, max(df_plot$`Risk (variance)`)))
+  gg_frontier_wBacktest <- gg
+  #print(gg_frontier_wBacktest)
+  return(gg_frontier_wBacktest)
+}
+#=======================================================================
+plot_frontier_and_budget <- function(df_frontier, df_wStar,
+                                     n_points_on_frontier,
+                                     varNames_ordered,
+                                     fig_title = NULL,
+                                     group_info = NULL,
+                                     group_colors = NULL){
+  #-------------------------------------------
+  # Frontier plot
+  #if(is.null(fig_title)){fig_title <- "Optimal Portfolio Frontier"}
+  df_plot <- df_frontier[, c("Risk (variance)", "Return target")]
+  gg <- ggplot(df_plot, aes(x = `Risk (variance)`, y = `Return target`))
+  gg <- gg + labs(title = fig_title)
+  gg <- gg + theme(axis.title.x = element_blank(),
+                   axis.text.x = element_blank()
+                   #plot.title = element_text(size = 10)
+  )
+  gg <- gg + geom_point()
+  gg_frontier <- gg
+  #-------------------------------------------
+  # Budget shares plot
+  # Note df_w_in should have just the target risk column (i.e. don't also include the backtest risk column). At any rate, the budget risk column should be the same as the one used in the frontier plot.
+  df_plot <- df_wStar
+  gathercols <- colnames(df_plot)[-1]
+  df_plot$portfolio_id <- 1:n_points_on_frontier
+  df_match_V <- df_plot[, c("portfolio_id", "Risk (variance)")]
+  df_plot <- df_plot %>% gather_("Item", "Budget shares", gathercols)
+  if(!is.null(group_info)){
+    list_groups <- group_info[[1]]
+    group_names <- group_info[[2]]
+    n_items <- nrow(mat_nab)
+    group_vec <- rep(NA, n_items)
+    for(i in 1:length(list_groups)){
+      this_group_vec <- list_groups[[i]]
+      this_group_name <- group_names[i]
+      group_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_name
+    }
+    df_match_group <- data.frame(Item = varNames_ordered, Type = group_vec)
+    df_plot <- merge(df_plot, df_match_group, by = "Item")
+    df_plot <- df_plot %>% group_by(portfolio_id, Type) %>% summarise(`Budget shares` = sum(`Budget shares`))
+    df_plot <- merge(df_plot, df_match_V, by = "portfolio_id")
+    colnames(df_plot)[2] <- "Item"
+  }
+  df_plot <- df_plot %>% group_by(Item) %>% mutate(mu = mean(`Budget shares`)) %>% as.data.frame(df_plot)
+  ind_order_mu <- order(df_plot$mu, df_plot$Item, decreasing = T)
+  df_plot$Item <- factor(df_plot$Item,
+                         levels = unique(df_plot$Item[ind_order_mu]),
+                         ordered = T)
+  #df_plot <- arrange(df_plot, Item, `Risk (variance)`)
+  gg <- ggplot(df_plot, aes(x = `Risk (variance)`, y = `Budget shares`, fill = Item))
+  if(!is.null(group_colors)){
+    ind_order_mu_color <- match(group_names,  unique(df_plot$Item[ind_order_mu]))
+    gg <- gg + scale_fill_manual(values = group_colors[ind_order_mu_color])
+  }
+  gg <- gg + geom_area(position = "stack")
+  gg <- gg + theme(legend.title = element_blank(),
+                   legend.position = "bottom")
+  if(length(unique(df_plot$Item)) > 15){gg <- gg + theme(legend.position = "none")}
+  gg_weights <- gg
+  #-------------------------------------------
+  gg_together <- gg_frontier + gg_weights + plot_layout(ncol = 1)
+  #print(gg_together)
+  outlist_gg <- list(gg_frontier, gg_weights, gg_together)
+  return(outlist_gg)
+}
+
+#=======================================================================
+get_optimal_frontier <- function(cormat, mat_nab,
+                                 Rtarg_limits = c(0.001, 0.3),
+                                 fig_title = NULL,
+                                 fun_env = NULL
+){
+  #-------------------------------------------
+  if(is.null(fun_env)){
+    n_points_on_frontier = 50
+    utility_interpretation = F
+    backtest_info = NULL
+    frontier_and_budget_plot = T
+    group_info = NULL
+    group_colors = NULL
+    #C_targ = 1
+  }else{
+    n_points_on_frontier = fun_env[[1]]
+    utility_interpretation = fun_env[[2]]
+    backtest_info = fun_env[[3]]
+    frontier_and_budget_plot = fun_env[[4]]
+    group_info = fun_env[[5]]
+    group_colors = fun_env[[6]]
+    #C_targ = fun_env[[7]]
+  }
+  #-------------------------------------------
+  Rtarg_vec <- seq(Rtarg_limits[1], Rtarg_limits[2], length.out = n_points_on_frontier)
+  list_wStar <- list()
+  R_vec <- c()
+  V_vec <- c()
+  lV_vec <- c()
+  lC_vec <- c()
+  #-------------------------------------------
+  for(i in 1:length(Rtarg_vec)){
+    this_Rtarg <- Rtarg_vec[i]
+    targ_vec <- c(this_Rtarg, C_targ)
+    list_out <- optimize_portfolio(cormat, mat_nab, targ_vec,
+                                   utility_interpretation)
+    list_wStar[[i]] <- list_out[[1]]
+    R_vec[i] <- list_out[[2]]
+    V_vec[i] <- list_out[[3]]
+    lV_vec[i] <- list_out[[4]]
+    lC_vec[i] <- list_out[[5]]
+  }
+  #-------------------------------------------
+  df_frontier <- data.frame(R_vec, V_vec, lV_vec, lC_vec)
+  colnames(df_frontier) <- c("Return target",
+                             "Risk (variance)",
+                             "Risk shadow price",
+                             "Budget shadow price")
+  df_wStar <- data.frame(V_vec, t(do.call(cbind, list_wStar)))
+  varNames_ordered <- row.names(mat_nab)
+  colnames(df_wStar) <- c("Risk (variance)", varNames_ordered)
+  #-------------------------------------------
+  # Backtest
+  if(!is.null(backtest_info)){
+    nab_pctRet_test <- backtest_info[[1]]
+    cormat_test <- backtest_info[[2]]
+    list_outTest <- list()
+    for(i in 1:n_points_on_frontier){
+      wStar <- list_wStar[[i]]
+      outvec <- backtest_portfolio(wStar, nab_pctRet_test, cormat_test,
+                                   include_benchmark = F)
+      list_outTest[[i]] <- outvec
+      
+    }
+    df_backtest <- as.data.frame(do.call(rbind, list_outTest))
+    colnames(df_backtest) <- c("Return backtest", "Risk backtest")
+  }else{
+    df_backtest <- NULL
+  }
+  #--------------------------------------
+  if(frontier_and_budget_plot){
+    outlist_gg <- plot_frontier_and_budget(df_frontier, df_wStar,
+                                           n_points_on_frontier = n_points_on_frontier,
+                                           varNames_ordered = varNames_ordered,
+                                           fig_title = fig_title,
+                                           group_info,
+                                           group_colors)
+  }
+  #--------------------------------------
+  list_out <- list(df_wStar, df_frontier, df_backtest, outlist_gg)
+  return(list_out)
+}
+#=======================================================================
+# Conventional risk-reward frontier
+n_items <- ncol(mat_pctDiff)
+C_targ <- 1
+nab_C <- rep(1, n_items)
+#------------------------------------
+# Correlation matrix
+cormat <- cor(mat_pctDiff_train)
+cormat_test <- cor(mat_pctDiff_test)
+# kappa(cormat)
+# kappa(cormat_test)
+# covmat <- round(cov(mat_pctDiff_train), 5)
+# covmat_test <- round(cov(mat_pctDiff_test), 5)
+# cormat <- Hmisc::rcorr(mat_pctDiff_train)$r
+# cormat_test <- Hmisc::rcorr(mat_pctDiff_test)$r
+#cormat <- round(mat_loads_rot_sig_train %*% t(mat_loads_rot_sig_train), 7)
+#cormat <- round(mat_loads_sig_train %*% t(mat_loads_sig_train), 7)
+# mse <- mean((cor(mat_pctDiff_train) - cormat)^2)
+# mse
+#------------------------------------
+# Expected returns vector
+#nab_pctRet_train <- apply(mat_pctDiff_train[ind_equal_test, ], 2, function(x) prod(1 + x)) - 1
+nab_pctRet_train <- apply(mat_pctDiff_train, 2, function(x) prod(1 + x)) - 1
+nab_pctRet_test <- apply(mat_pctDiff_test, 2, function(x) prod(1 + x)) - 1
+#------------------------------------
+mat_nab <- cbind(nab_pctRet_train, nab_C)
+n_points_on_frontier <- 50
+#------------------------------------
+fun_env <- list(n_points_on_frontier,
+                utility_interpretation = F,
+                backtest_info = list(nab_pctRet_test, cormat_test),
+                frontier_and_budget_plot = T,
+                group_info,
+                group_colors)#,
+                #C_targ)
+
+list_out <- get_optimal_frontier(cormat, mat_nab,
+                                 Rtarg_limits = c(0.01, 0.3),
+                                 fig_title = NULL,
+                                 fun_env)
+
+df_frontier <- list_out[[2]]
+df_backtest <- list_out[[3]]
+outlist_gg <- list_out[[4]]
+gg_frontier <- outlist_gg[1]
+gg_weights <- outlist_gg[2]
+#------------------------------------
+gg_backtest <- plot_frontier_wBacktest(df_frontier,
+                                       df_backtest,
+                                       fig_title = NULL)
+#------------------------------------
+(gg_frontier[[1]] / gg_weights[[1]] / plot_layout(ncol = 1)) | gg_backtest
+#https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ggplotPatchwork.html
+#------------------------------------
+# kappa(covmat)
+# View(covmat)
+
+
+```
+
+
+The optimal frontier and budget shares using the utility approach presented in the methods section are plotted on the left in Figure \ref{fig:mvUtility}. The frontier looks much less appealing than the unmodified frontier. However, a backtest (right side of Figure \ref{fig:mvUtility}) suggests that it is more accurate than the unmodified approach.
+
+\pagebreak
+
+```{r, fig.show='hold', fig.width=10, fig.height=4, fig.align='center', fig.cap="\\label{fig:mvUtility}\\textit{(Left)} Optimal frontier and budget shares, replacing returns and cost with utility functions. \\textit{(Right)} Backtest of the optimal frontier.", echo = FALSE}
+
+fun_env <- list(n_points_on_frontier,
+                utility_interpretation = T,
+                backtest_info = list(nab_pctRet_test, cormat_test),
+                frontier_and_budget_plot = T,
+                group_info,
+                group_colors)
+
+list_out <- get_optimal_frontier(cormat, mat_nab,
+                                 Rtarg_limits = c(0.01, 5),
+                                 fig_title = NULL,
+                                 fun_env)
+
+df_frontier <- list_out[[2]]
+df_backtest <- list_out[[3]]
+outlist_gg <- list_out[[4]]
+gg_frontier <- outlist_gg[1]
+gg_weights <- outlist_gg[2]
+#------------------------------------
+gg_backtest <- plot_frontier_wBacktest(df_frontier,
+                                       df_backtest,
+                                       fig_title = NULL)
+#------------------------------------
+(gg_frontier[[1]] / gg_weights[[1]] / plot_layout(ncol = 1)) | gg_backtest
+#https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ggplotPatchwork.html
+#------------------------------------
+
+
+```
+
+Since much of the inaccuracy of the MV frontier is attributable to noise in the data, it stands to reason that the optimal frontier of a portfolio containing only signals---i.e. the significant information in the data, purged of noise---will be more accurate. But is this true? The frontier and budget shares of the signals portfolio are displayed on the left side of in Figure \ref{fig:mvUSig}. The optimal frontier for such a portfolio is unappealing compared to the conventional frontier, but the backtest (right side of Figure \ref{fig:mvUSig}) reveals that the solutions yield a much better performance, at least over this particular dataset. More experimentation is required, of course, before this can be confirmed or rejected as a general rule. Note that a signals portfolio also has the benefit of reducing transaction costs. Were banks or other financial institutions to create products (along the lines of an ETF, for example) that track signals, investors could then invest in just a handful of signals instead of potentially several dozen securities.
+
+
+```{r, fig.show='hold', fig.width=10, fig.height=4, fig.align='center', fig.cap="\\label{fig:mvUSig}\\textit{(Left)} Optimal frontier and budget shares, signals approach (using utility approach). The signals are named in accordance with their respective highest loading items, and numbered in descending order of their respective eigenvalues. \\textit{(Right)} Backtest of the optimal frontier.", echo=F}
+
+#=======================================================================
+# Signals correlation matrix risk-reward frontier
+n_signals <- ncol(mat_loads_sig_train)
+nab_C <- rep(1, n_signals)
+#------------------------------------
+mat_pctDiff_sig_test <- mat_pctDiff_test %*% mat_eigvecs_sig_train
+#------------------------------------
+# Correlation matrix
+cormat <- cor(mat_pctDiff_sig_train)
+cormat_test <- round(cor(mat_pctDiff_sig_test), 7)
+# covmat <- cov(mat_pctDiff_sig_train)
+# covmat_test <- round(cov(mat_pctDiff_sig_test), 7)
+# cormat <- Hmisc::rcorr(mat_pctDiff_sig_train)$r
+# cormat_test <- round(Hmisc::rcorr(mat_pctDiff_sig_test)$r, 7)
+#------------------------------------
+# Expected returns vector
+#nab_pctRet_train <- apply(mat_pctDiff_sig_train[ind_equal_test, ], 2, function(x) prod(1 + x)) - 1
+nab_pctRet_train <- apply(mat_pctDiff_sig_train, 2, function(x) prod(1 + x)) - 1
+nab_pctRet_test <- apply(mat_pctDiff_sig_test, 2, function(x) prod(1 + x)) - 1
+#------------------------------------
+mat_nab <- cbind(nab_pctRet_train, nab_C)
+#signal_names <- c("Sig. 1: US / Emerg. Markets,\nEnergy, Blockchain", "Sig. 2: Precious metals", "Sig. 3: FOREX", "Sig. 4: US Bonds", "Sig. 5: Agriculture", "Sig. 6: Industrial metals")
+signal_names <- paste("Signal", c(1:n_signals))
+row.names(mat_nab) <- signal_names
+#------------------------------------
+fun_env <- list(n_points_on_frontier,
+                utility_interpretation = T,
+                backtest_info = list(nab_pctRet_test, cormat_test),
+                frontier_and_budget_plot = T,
+                group_info = NULL,
+                group_colors = NULL)
+
+list_out <- get_optimal_frontier(cormat, mat_nab,
+                                 Rtarg_limits = c(0.1, 0.5),
+                                 fig_title = NULL,
+                                 fun_env)
+
+df_frontier <- list_out[[2]]
+df_backtest <- list_out[[3]]
+outlist_gg <- list_out[[4]]
+gg_frontier <- outlist_gg[1]
+gg_weights <- outlist_gg[2]
+#------------------------------------
+gg_backtest <- plot_frontier_wBacktest(df_frontier,
+                                       df_backtest,
+                                       fig_title = NULL)
+#------------------------------------
+(gg_frontier[[1]] / gg_weights[[1]] / plot_layout(ncol = 1)) | gg_backtest
+#https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ggplotPatchwork.html
+#------------------------------------
+
+```
+
+\pagebreak
+
+
+
+```{r, fig.show = 'hold', fig.width=5, fig.height=3, fig.align='center', fig.cap="\\label{fig:eigDens}Eigenvalue density plots for the financial data correlation matrix and a\ncorrelation matrix of a random dataset of the same dimensions. Whole data set.", echo=FALSE}
+fun_env = list(eigenvalue_density_plot = T,
+               pca_var_plot = F,
+               pca_ind_plot = F,
+               group_info,
+               quietly = F)
+
+this_fig_title <- NULL
+list_out <- signals_from_noise(mat_pctDiff, fig_title_eigDens = this_fig_title, fun_env)
+# list_out <- list(mat_loads_sig, mat_loads_rot_sig, mat_loads, mat_loads_rot, mat_inData_sig, eigvals_sig, mat_eigvecs_sig, eigvals, mat_eigvecs)
+mat_loads_sig <- list_out[[1]]
+mat_loads_rot_sig <- list_out[[2]]
+mat_pctDiff_sig <- list_out[[5]]
+mat_eigvecs_sig <- list_out[[7]]
+```
+
+```{r, fig.show='hold', fig.width=10, fig.height=7, fig.align='center', fig.cap="\\label{fig:loadsRot}Rotated signal loadings, whole dataset.", echo=FALSE}
+
+#signal_names <- c("US / Emerg. Markets,\nEnergy, Blockchain", "Precious metals", "FOREX", "US Bonds", "Agriculture", "Industrial metals")
+signal_names <- NULL
+fun_env <- list(group_info, signal_names, group_colors)
+this_fig_title <- NULL
+interpret_loadings(mat_loads_rot_sig, fig_title = this_fig_title, fun_env)
+#interpret_loadings(mat_loads_sig, fig_title = this_fig_title, fun_env)
+
+```
+
+```{r, fig.show='hold', fig.width=10, fig.height=12, fig.align='center', fig.cap="\\label{fig:sigs2}Signals plotted against their respective highest loading items, whole dataset.", echo=FALSE}
+this_fig_title <- NULL
+plot_signals_against_associated_items(mat_loads_rot_sig,
+                                      mat_pctDiff,
+                                      mat_pctDiff_sig,
+                                      load_threshold = 0.5,
+                                      n_display_max = 6,
+                                      fig_title = this_fig_title)
+
+```
+
+
+
+
+
+```{r, fig.show='hold', fig.width=6, fig.height=5, fig.align='center', fig.cap="\\label{fig:mvUSig}Optimal frontier and budget shares, signals approach (using utility approach). The signals are numbered in descending order of their respective eigenvalues. Whole dataset.", echo=F}
+
+#=======================================================================
+# Signals correlation matrix risk-reward frontier
+n_signals <- ncol(mat_loads_sig)
+nab_C <- rep(1, n_signals)
+#------------------------------------
+# Correlation matrix
+cormat <- cor(mat_pctDiff_sig)
+# covmat <- cov(mat_pctDiff_sig_train)
+# covmat_test <- round(cov(mat_pctDiff_sig_test), 7)
+# cormat <- Hmisc::rcorr(mat_pctDiff_sig_train)$r
+# cormat_test <- round(Hmisc::rcorr(mat_pctDiff_sig_test)$r, 7)
+#------------------------------------
+# Expected returns vector
+#nab_pctRet_train <- apply(mat_pctDiff_sig_train[ind_equal_test, ], 2, function(x) prod(1 + x)) - 1
+nab_pctRet <- apply(mat_pctDiff_sig, 2, function(x) prod(1 + x)) - 1
+#------------------------------------
+mat_nab <- cbind(nab_pctRet, nab_C)
+#signal_names <- c("Sig. 1: US / Emerg. Markets,\nEnergy, Blockchain", "Sig. 2: Precious metals", "Sig. 3: FOREX", "Sig. 4: US Bonds", "Sig. 5: Agriculture", "Sig. 6: Industrial metals")
+signal_names <- paste("Signal", c(1:n_signals))
+row.names(mat_nab) <- signal_names
+#------------------------------------
+fun_env <- list(n_points_on_frontier,
+                utility_interpretation = T,
+                backtest_info = NULL,
+                frontier_and_budget_plot = T,
+                group_info = NULL,
+                group_colors = NULL)
+
+list_out <- get_optimal_frontier(cormat, mat_nab,
+                                 Rtarg_limits = c(0.1, 0.5),
+                                 fig_title = NULL,
+                                 fun_env)
+
+df_frontier <- list_out[[2]]
+df_backtest <- list_out[[3]]
+outlist_gg <- list_out[[4]]
+gg_frontier <- outlist_gg[1]
+gg_weights <- outlist_gg[2]
+#------------------------------------
+gg_frontier[[1]] / gg_weights[[1]] / plot_layout(ncol = 1)
+#https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ggplotPatchwork.html
+#------------------------------------
+
+```
+
+
+\pagebreak
+
+
+# Detect periodicity in signals
+
+```{r, echo=FALSE, include=FALSE}
+  # Detect periodicity
+  df_pctDiff_sig <- as.data.frame(mat_pctDiff_sig)
+  df_wave <- df_pctDiff_sig
+  colvec <- paste0("V", c(1:n_signals))
+  list_waveAnalysis <- list()
+for(i in 1:n_signals){
+      waveAnalysis <- analyze.wavelet(df_wave, colvec[i],
+                          loess.span = 0,
+                          dt = 1, dj = 1/250,
+                          lowerPeriod = 2^3,
+                          upperPeriod = 2^9,
+                          make.pval = TRUE, n.sim = 10,
+                          verbose = F)
+      list_waveAnalysis[[i]] <- waveAnalysis
+
+}
+  
+  
+
+```
+
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:periods}Extraction of the ts' main cycle period lengths using the WaveletComp package.", fig.width=6, fig.height=3, echo=FALSE}
+# Get/see main periods
+#list(df_wave, per_vec, df_periodogram, gg_periodogram, wtImage)
+list_per_vec <- list()
+for(i in 1:n_signals){
+  this_waveAnalysis <- list_waveAnalysis[[i]]
+  df_mainCycles <- get_cycles(this_waveAnalysis)
+  this_per_vec <- df_mainCycles$Period
+
+kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+list_per_vec[[i]] <- this_per_vec
+}
+
+
+```
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:waveComp}WaveletComp package graphic output.", fig.width=6, fig.height=3, echo=FALSE}
+
+for(i in 1:n_signals){
+  this_waveAnalysis <- list_waveAnalysis[[i]]
+    wtImage <- wt.image(this_waveAnalysis, color.key = "quantile", n.levels = 250,
+           legend.params = list(lab = "wavelet power levels", mar = 4.7))
+  # my.rec <- reconstruct(my.w)
+  # x.rec <- my.rec$series$x.r  # x: name of original series
+
+}
+
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+# n_lookAhead <- 50
+# 
+# n_test = round(1 / 4 * nrow(df_wave))
+# ind_fit <- 1:(nrow(df_wave) - n_test)
+# ind_test <- setdiff(1:nrow(df_wave), ind_fit)
+# 
+# list_yhat_validate <- list()
+# list_ypredict_validate <- list()
+# list_yhat_pred <- list()
+# list_ypredict_pred <- list()
+# list_summod <- list()
+# 
+# for(i in 1:n_signals){
+#     ts <- df_wave[ind_fit, i]
+#     per_vec <- list_per_vec[[i]]
+#   #------------------
+#   # Validate
+# out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_test)
+# yhat_validate <- out_fitWave[[1]]
+# ypredict_validate <- out_fitWave[[2]]
+# #------------------
+# # Predict
+# out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+# yhat_pred <- out_fitWave[[1]]
+# ypredict_pred <- out_fitWave[[2]]
+# summod <- out_fitWave[[3]]
+# #------------------
+# list_yhat_validate[[i]] <- yhat_validate
+# list_ypredict_validate[[i]] <- ypredict_validate
+# list_yhat_pred[[i]] <- yhat_pred
+# list_ypredict_pred[[i]] <- ypredict_pred
+# list_summod[[i]] <- summod
+# }
+# 
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\pagebreak
+
+# Cyclic model
+
+A cyclic model made up of sine and cosine waves is constructed below from the periods extracted in the last step.
+
+```{r, echo=FALSE}
+#kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+\pagebreak
+
+## Backtest
+
+<!-- The cyclic model is backtested over a `r toString(n_test)` step period in Figure \ref{fig:validate}. -->
+
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:validate}Backtest of the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
+
+#plot_validation(yhat_validate, ypredict_validate, df_wave)
+
+```
+
+
+## Prediction
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:pred}Prediction based on the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
+
+#plot_prediction(yhat_pred, ypredict_pred, df_wave)
+
+```
+
+In Figure \ref{fig:pred}, a prediction of where the ts is headed `r toString(n_lookAhead)` `r t_units` into the future is made using the model.
