@@ -126,27 +126,27 @@ plot_validation <- function(yhat, ypredict, df_wave){
   print(gg_together)
 }
 #========================================================================
-plot_prediction <- function(yhat, ypredict, df_wave){
+plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 30){
   n_end <- nrow(df_wave)
+  df_wave <- df_wave[, c("date", "dt")]
   df_wave$yhat <- yhat
   df_wave$set <- "fit"
   df_wave$t <- NULL
-  date_fut <- seq(as.Date(df_wave$date[nrow(df_wave)] + 1), as.Date(df_wave$date[nrow(df_wave)] + 2 * n_lookAhead), by = 1)
+  time_step <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+  date_fut <- seq((df_wave$date[nrow(df_wave)] + time_step), (df_wave$date[nrow(df_wave)] + 2 * time_step * n_lookAhead), by = time_step)
   date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
   #length(date_fut)
   date_fut <- date_fut[1:n_lookAhead]
-  df_add <- data.frame(date = date_fut, p = NA, ema = NA, dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_add <- data.frame(date = date_fut, dt = NA, yhat = ypredict[, 1], set = "predict")
   df_wave <- rbind(df_wave, df_add)
   df_plot <- df_wave
-  df_plot <- df_plot %>% gather(Type, Value, p:yhat)
-  #unique(df_plot$Type)
-  df_plot_ts_dtFit <- subset(df_plot, Type %in% c("dt", "yhat"))
-  n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
+  df_plot <- df_plot %>% gather(Type, Value, dt:yhat)
+  n_types_fit <- length(unique(df_plot$Type))
   distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit)
   colors_dtFit <- distinct_colors
   
-  df_plot_dt <- subset(df_plot_ts_dtFit, Type == "dt")
-  df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
+  df_plot_dt <- subset(df_plot, Type == "dt")
+  df_plot_dtFit <- subset(df_plot, Type == "yhat")
   gg <- ggplot()
   gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
@@ -193,27 +193,30 @@ get_cycles <- function(waveAnalysis){
 ```
 
 
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}Basic plot of (bottom) time series with an EMA, and (top) the ts detrended.", fig.height=7, fig.width=5, echo=FALSE}
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}Basic plot of (bottom) time series with an EMA, and (top) the ts detrended.", fig.height=4, fig.width=7, echo=FALSE}
 #======================================================
 # Set parameters
-currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
-                    "GBPUSD=X", "AUDUSD=X", "INR=X")
-currency_detail <- c("EUR/USD", "USD/JPY",
-                     "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
-t_units <- "days"
-this_guy <- "SPY"
-starting_how_many_days_ago <- 500
-per_ema <- 21
+symb_currency_from <- "EUR"
+symb_currency_to <- "USD"
+#this_symb <- "SPY"
+time_step <- "5min"
+per_ema_short <- 21
+per_ema_for_detrend <- 34
+per_ema_long <- 55
 n_lookAhead <- 50
+backtest_fraction <- 1 / 4
 #======================================================
-fromdate <- Sys.Date() - starting_how_many_days_ago
+#fromdate <- Sys.Date() - starting_how_many_days_ago
 # tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
 #tbl_ohlcv <- tq_get(currency_symbs, get = "stock.prices", from = fromdate)
 # df_ohlcv <- as.data.frame(tbl_ohlcv)
 av_api_key("HQBAWJK4Y3YW81VG")
-tbl_ohlcv <- this_guy %>%
-  tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = "5min",
-         outputsize = "full")
+if(!is.null(symb_currency_from)){
+  tbl_ohlcv <- tq_get("", get = "alphavantager", av_fun = "FX_INTRADAY", interval = time_step, from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full")
+}else{
+tbl_ohlcv <- this_symbol %>%
+  tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = "5min", outputsize = "full")  
+}
 df_ohlcv <- as.data.frame(tbl_ohlcv)
 #nrow(df_ohlcv)
 df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
@@ -224,7 +227,10 @@ df <- as.data.frame(df)
 #df <- df %>% mutate(date = as.POSIXct(date, format = "%Y-%m-%d %H:%M:%S"))
 o <- apply(df, 2, function(x) length(which(is.na(x))))
 #table(o)
-
+#df[, -1] <- na.spline(df[, -1])
+#--------------------------------------------------------------
+df$ema <- EMA(df$p, per_ema_for_detrend)
+df$dt <- df$p - df$ema
 #--------------------------------------------------------------
 # convert to character column and set up handy columns for making breaks
 df <- df %>%
@@ -233,114 +239,105 @@ df <- df %>%
              hour = lubridate::hour(date),
              minute = lubridate::minute(date),
              new_day = if_else(day != lag(day) | is.na(lag(day)), 1, 0))
-
-
-df
 # breaks equally spaced
-my_breaks <-df$date_chr[seq.int(1,length(df$date_chr) , by = 30)]
+my_breaks <- df$date_chr[seq.int(1, length(df$date_chr), by = 30)]
 #my_breaks <- df[df$minute == 0,]$date_chr
 #my_breaks <- df[df$new_day == 1,]$date_chr
-
-# ggplot(df, aes(x = date_chr, y = dt, group = 1)) +  
-#   geom_line() +
-#   scale_x_discrete(breaks = my_breaks) +
-#   theme(axis.text.x = element_text(angle = 60, hjust = 1))
-
-these_days <- c(15, 16, 17, 18, 21)
-
-df_plot <- subset(df, day %in% these_days)
-gg <- ggplot(df_plot, aes(x = date_chr, y = dt, group = 1))
+#------------------------------------------------------------
+# Basic overview plot
+gg <- ggplot(df, aes(x = date_chr, y = dt, group = 1))
 gg <- gg + geom_line()
 gg <- gg + scale_x_discrete(breaks = my_breaks)
-gg <- gg + facet_wrap(~day, ncol = 1, scales = "free")
-gg <- gg + theme(axis.text.x = element_blank())
-#gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1))
-gg
+gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
+                 axis.title.x = element_blank())
+gg_dt <- gg
+#------------------------------------------------------------
+df_plot <- df[, c("date_chr", "p", "ema")]
+colnames(df_plot)[3] <- paste("ema", per_ema_for_detrend)
+df_plot$ema_short <- EMA(df$p, per_ema_short)
+df_plot$ema_long <- EMA(df$p, per_ema_long)
+colnames(df_plot)[4] <- paste("ema", per_ema_short)
+colnames(df_plot)[5] <- paste("ema", per_ema_long)
 
+gathercols <- colnames(df_plot)[2:ncol(df_plot)]
+df_plot <- df_plot %>% gather_("Type", "p", gathercols)
 
-  df_wave <- df_plot
-  list_df <- list()
-for(i in 1:length(these_days)){
-  this_day <- these_days[i]
-  print(this_day)
-  this_df_wave <- subset(df_wave, day == this_day)
-    waveAnalysis <- analyze.wavelet(this_df_wave, "dt",
+gg <- ggplot(df_plot, aes(x = date_chr, y = p, group = Type, color = Type))
+gg <- gg + geom_line()
+gg <- gg + scale_x_discrete(breaks = my_breaks)
+gg <- gg + theme(legend.title = element_blank(),
+                 axis.title.x = element_blank(),
+                 axis.text.x = element_blank())
+gg_raw <- gg
+#------------------------------------------------------------
+gg_raw / gg_dt / plot_layout(ncol = 1)
+#------------------------------------------------------------
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+#------------------------------------------------------------
+  df_wave <- df[-c(1:(per_ema_for_detrend + 1)), c("date", "p", "ema", "dt")]
+#------------------------------------------------------------
+    waveAnalysis <- analyze.wavelet(df_wave, "dt",
                           loess.span = 0,
                           dt = 1,
-                          lowerPeriod = 2^3,
+                          lowerPeriod = 2^1,
                           upperPeriod = 2^9,
                           make.pval = TRUE, n.sim = 10,
                           verbose = F)
-      wtImage <- wt.image(waveAnalysis, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
+#------------------------------------------------------------
+```
 
-  df_mainCycles <- get_cycles(waveAnalysis)
-  #per_vec <- df_mainCycles$Period
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:periods}Extraction of the ts' main cycle period lengths using the WaveletComp package.", fig.width=6, fig.height=3, echo=FALSE}
+#------------------------------------------------------------
+# Plot beautiful waveComp analysis
+  wtImage <- wt.image(waveAnalysis, color.key = "quantile", n.levels = 250,
+           legend.params = list(lab = "wavelet power levels", mar = 4.7))
+  # my.rec <- reconstruct(my.w)
+  # x.rec <- my.rec$series$x.r  # x: name of original series
+#------------------------------------------------------------
+# Get periods and plot periodogram
+        df_mainCycles <- get_cycles(waveAnalysis)
+per_vec <- df_mainCycles$Period
+kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+#------------------------------------------------------------
+```
+
+```{r, echo=FALSE, include=FALSE}
+#------------------------------------------------------------
+# Get validate (backtest) info
+n_test = round(backtest_fraction * nrow(df_wave))
+ind_fit <- 1:(nrow(df_wave) - n_test)
+ind_test <- setdiff(1:nrow(df_wave), ind_fit)
+ts <- df_wave$dt[ind_fit]
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_test)
+yhat_validate <- out_fitWave[[1]]
+ypredict_validate <- out_fitWave[[2]]
+#------------------------------------------------------------
+# Get predict info
+ts <- df_wave$dt
+out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+yhat_pred <- out_fitWave[[1]]
+ypredict_pred <- out_fitWave[[2]]
+summod <- out_fitWave[[3]]
+    
+```
   
-  list_df[[i]] <- df_mainCycles
+```{r, echo=FALSE}  
 
-}
-
-
+kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 
 
+## Backtest
 
+plot_validation(yhat_validate, ypredict_validate, df_wave)
 
-
-
-  df_wave <- df[ -c(1:(per_ema + 1)),]
-my.w <- analyze.wavelet(my.data = df_wave, "dt",
-dt = 1/(12*24))
-  wtImage <- wt.image(my.w, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
-
+## Prediction
+plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead)
 #--------------------------------------------------------------
 
-#df[, -1] <- na.spline(df[, -1])
-#df_ema <- as.data.frame(apply(df[, -1], 2, EMA, per_ema))
-#df$p <- log(df$p)
-df$ema <- EMA(df$p, per_ema)
-df$dt <- df$p - df$ema
-df <- df[, c("date", "date_chr")]
-df_plot <- df
-
-gathercols <- colnames(df_plot)[2:ncol(df)]
-df_plot <- df_plot %>% gather_("Type", "Value", gathercols)
-df_plot$Subtype <- NA
-df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
-df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
-df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
-df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
-
-gg <- ggplot()
-gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
-gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
-gg <- gg + theme(legend.position = "none")
-gg
-
-
-  df_wave <- df[ -c(1:(per_ema + 1)),]
-my.w <- analyze.wavelet(my.data = df_wave, "dt",
-dt = 1/(12*24))
-  wtImage <- wt.image(my.w, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
-
-my.w.a <- analyze.wavelet(df_wave, "dt",
-loess.span = 0.0, # no detrending required
-dt = 1/(12*24), # one day has 12*24 5-minute time slots
-dj = 1/50, # resolution along period axis
-lowerPeriod = 1/8, # lowest period of interest: 3 hours
-make.pval = TRUE, # draws white lines indicating significance
-n.sim = 10) # higher number will give smoother white lines
-  wtImage <- wt.image(my.w.a, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
-  
-  at <- seq(1, nrow(df_wave), by = 12*24) # every active day at 00:00:00
-labels <- strftime(as.POSIXct(df_wave$date[at],
-format="%F %T", tz = "GMT"), format ="%b %d")
-wt.image(my.w.a, n.levels = 250, periodlab = "period (active days)",
-legend.params = list(lab = "wavelet power levels"),
-spec.time.axis = list(at = at, labels = labels))
 
 
 ```
