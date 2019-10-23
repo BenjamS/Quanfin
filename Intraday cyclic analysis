@@ -1,5 +1,5 @@
 ---
-title: "Trade Strategy"
+title: "Intraday forecast"
 author: "Ben Schiek"
 date: "`r Sys.Date()`"
 output: 
@@ -72,12 +72,13 @@ fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAh
 }
 #========================================================================
 plot_validation <- function(yhat, ypredict, df_wave){
-  df_plot <- df_wave
+  df_plot <- df_wave[, c( "date", "date_chr", "p", "ema", "dt")]
   df_plot$yhat <- c(yhat, ypredict[, 1])
   df_plot$set <- NA
   df_plot$set[ind_fit] <- "fit"
   df_plot$set[ind_test] <- "test"
   df_plot$yhat_p <- df_plot$p + df_plot$yhat
+  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), by = 30)]
   df_plot <- df_plot %>% gather(Type, Value, p:yhat_p)
   df_plot$Value <- as.numeric(df_plot$Value)
   #unique(df_plot$Type)
@@ -94,8 +95,8 @@ plot_validation <- function(yhat, ypredict, df_wave){
   df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
   
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
+  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date_chr, y = Value, color = Type, group = 1), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_dt, aes(x = date_chr, y = Value, color = Type, group = 1))#, color = colors_dtFit[1])
   gg <- gg + scale_color_manual(values = colors_dtFit)
   gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1, color = "violet")
   gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
@@ -111,12 +112,14 @@ plot_validation <- function(yhat, ypredict, df_wave){
   df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
   df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date, y = Value, group = Type, color = Type))
-  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date, y = Value, color = Type), lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
+  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date_chr, y = Value, color = Type), lwd = 1.1)
   gg <- gg + scale_color_manual(values = colors_ts)
-  gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], color = "violet", lwd = 1)
+  gg <- gg + geom_vline(xintercept = df_plot$date_chr[ind_test[1]], color = "violet", lwd = 1)
   gg <- gg + theme_bw()
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + theme(axis.title = element_blank(),
+                   axis.text.x = element_text(angle = 60, hjust = 1),
                    #legend.position = "bottom",
                    legend.title = element_blank())
   gg_ts <- gg
@@ -128,33 +131,32 @@ plot_validation <- function(yhat, ypredict, df_wave){
 #========================================================================
 plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 30){
   n_end <- nrow(df_wave)
-  df_wave <- df_wave[, c("date", "dt")]
-  df_wave$yhat <- yhat
-  df_wave$set <- "fit"
-  df_wave$t <- NULL
-  time_step <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
-  date_fut <- seq((df_wave$date[nrow(df_wave)] + time_step), (df_wave$date[nrow(df_wave)] + 2 * time_step * n_lookAhead), by = time_step)
+  df_plot <- df_wave[, c("date", "date_chr", "dt")]
+  df_plot$yhat <- yhat
+  df_plot$set <- "fit"
+  df_plot$t <- NULL
+  time_step <- 60 * as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+  date_fut <- seq((df_plot$date[nrow(df_plot)] + time_step), (df_plot$date[nrow(df_plot)] + 2 * time_step * n_lookAhead), by = time_step)
   date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
   #length(date_fut)
   date_fut <- date_fut[1:n_lookAhead]
-  df_add <- data.frame(date = date_fut, dt = NA, yhat = ypredict[, 1], set = "predict")
-  df_wave <- rbind(df_wave, df_add)
-  df_plot <- df_wave
-  df_plot <- df_plot %>% gather(Type, Value, dt:yhat)
-  n_types_fit <- length(unique(df_plot$Type))
-  distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit)
+  df_add <- data.frame(date = date_fut, date_chr = as.character(date_fut), dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_plot <- rbind(df_plot, df_add)
+  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), by = 30)]
+  distinct_colors <- randomcoloR::distinctColorPalette(k = 2)
   colors_dtFit <- distinct_colors
   
-  df_plot_dt <- subset(df_plot, Type == "dt")
-  df_plot_dtFit <- subset(df_plot, Type == "yhat")
+  # df_plot_dt <- subset(df_plot, Type == "dt")
+  # df_plot_dtFit <- subset(df_plot, Type == "yhat")
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
-  gg <- gg + scale_color_manual(values = colors_dtFit)
+  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + geom_vline(xintercept = df_plot$date[n_end], lwd = 1, color = "violet")
   gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
+                   axis.text.x = element_text(angle = 60, hjust = 1),
                    legend.title = element_blank(),
                    #legend.position = "top",
                    axis.ticks.x = element_blank())
@@ -277,7 +279,7 @@ gg_raw / gg_dt / plot_layout(ncol = 1)
 
 ```{r, echo=FALSE, include=FALSE}
 #------------------------------------------------------------
-  df_wave <- df[-c(1:(per_ema_for_detrend + 1)), c("date", "p", "ema", "dt")]
+  df_wave <- df[-c(1:(per_ema_for_detrend + 1)), c("date", "date_chr", "p", "ema", "dt")]
 #------------------------------------------------------------
     waveAnalysis <- analyze.wavelet(df_wave, "dt",
                           loess.span = 0,
@@ -341,110 +343,3 @@ plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead)
 
 
 ```
-
-
-# Introduction
-
-Figure \ref{fig:basic} is a basic plot of the `r this_guy` time series, from `r toString(fromdate)` to `r Sys.Date()`. The bottom panel is the time series together with a `r toString(per_ema)` step exponential moving average. The time steps are `r t_units`.
-
-\pagebreak
-
-# Extraction of periodicity
-
-In Figure \ref{fig:periods}, the ts' main cycle lengths (periods) are extracted using continuous wavelet based analysis (WaveletComp package). The lovely WaveletComp graphical output is included in Figure \ref{fig:waveComp}.
-
-```{r, echo=FALSE, include=FALSE}
-  # Detect periodicity
-  df_wave <- df[ -c(1:(per_ema + 1)),]
-
-at <- seq(1, nrow(my.data.a), by = 12*24) # every active day at 00:00:00
-labels <- strftime(as.POSIXct(my.data.a$date[at],
-format="%F %T", tz = "GMT"), format ="%b %d")
-
-  #df_wave$dt <- scale(df_wave$dt)
-  waveAnalysis <- analyze.wavelet(df_wave, "dt",
-                          loess.span = 0,
-                          dt = 1 / , dj = 1/250,
-                          lowerPeriod = 2^3,
-                          upperPeriod = 2^9,
-                          make.pval = TRUE, n.sim = 10,
-                          verbose = F)
-
-```
-
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:periods}Extraction of the ts' main cycle period lengths using the WaveletComp package.", fig.width=6, fig.height=3, echo=FALSE}
-# Get/see main periods
-#list(df_wave, per_vec, df_periodogram, gg_periodogram, wtImage)
-df_mainCycles <- get_cycles(waveAnalysis)
-per_vec <- df_mainCycles$Period
-
-kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-
-
-```
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:waveComp}WaveletComp package graphic output.", fig.width=6, fig.height=3, echo=FALSE}
-
-  wtImage <- wt.image(waveAnalysis, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
-  # my.rec <- reconstruct(my.w)
-  # x.rec <- my.rec$series$x.r  # x: name of original series
-
-```
-
-
-```{r, echo=FALSE, include=FALSE}
-# Validate
-n_test = round(1 / 4 * nrow(df_wave))
-ind_fit <- 1:(nrow(df_wave) - n_test)
-ind_test <- setdiff(1:nrow(df_wave), ind_fit)
-ts <- df_wave$dt[ind_fit]
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_test)
-yhat_validate <- out_fitWave[[1]]
-ypredict_validate <- out_fitWave[[2]]
-
-# Predict
-
-ts <- df_wave$dt
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
-yhat_pred <- out_fitWave[[1]]
-ypredict_pred <- out_fitWave[[2]]
-summod <- out_fitWave[[3]]
-
-
-```
-
-\pagebreak
-
-# Cyclic model
-
-A cyclic model made up of sine and cosine waves is constructed below from the periods extracted in the last step.
-
-```{r, echo=FALSE}
-kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-```
-
-\pagebreak
-
-## Backtest
-
-The cyclic model is backtested over a `r toString(n_test)` step period in Figure \ref{fig:validate}.
-
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:validate}Backtest of the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
-
-plot_validation(yhat_validate, ypredict_validate, df_wave)
-
-```
-
-
-## Prediction
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:pred}Prediction based on the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
-
-plot_prediction(yhat_pred, ypredict_pred, df_wave)
-
-```
-
-In Figure \ref{fig:pred}, a prediction of where the ts is headed `r toString(n_lookAhead)` `r t_units` into the future is made using the model.
