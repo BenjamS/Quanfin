@@ -231,16 +231,17 @@ get_cycles <- function(waveAnalysis){
 #======================================================
 # Set parameters
 #------------------------------------------------------
-symb_currency_from <- "EUR"#"AUD"#"EUR"#"AUD"
+symb_currency_from <- "GBP"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
 symb_currency_to <- "USD"
 # OR
-this_symbol <- "SPY"#"SLV"#"SLV"#"CL"#"SI"#"GC"#"NG"#"CL"
+this_symbol <- "SPY"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
 # If doing "this_symbol" then symb_currency_from has to be NULL
 #------------------------------------------------------
 time_step <- "5min"
 per_ema_short <- 21
 per_ema_for_detrend <- 55
 per_ema_long <- 89
+n_max_periods <- 4
 backtest_fraction <- 1 / 4
 n_lookAhead <- 55
 n_lookAhead_zoom <- n_lookAhead
@@ -335,7 +336,7 @@ time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
                           loess.span = 0,
                           dt = time_step_num / 60,
                           lowerPeriod = 2^1,
-                          upperPeriod = 2^6,
+                          upperPeriod = 2^7,
                           make.pval = TRUE, n.sim = 10,
                           verbose = F)
 #------------------------------------------------------------
@@ -366,13 +367,13 @@ ind_fit <- 1:(nrow(df_wave) - n_test)
 ind_test <- setdiff(1:nrow(df_wave), ind_fit)
 ts <- df_wave$dt[ind_fit]
 per_vec <- df_mainCycles$Period * 60 / time_step_num
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_test)
+out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_test)
 yhat_validate <- out_fitWave[[1]]
 ypredict_validate <- out_fitWave[[2]]
 #------------------------------------------------------------
 # Get predict info
 ts <- df_wave$dt
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_lookAhead)
 yhat_pred <- out_fitWave[[1]]
 ypredict_pred <- out_fitWave[[2]]
 summod <- out_fitWave[[3]]
