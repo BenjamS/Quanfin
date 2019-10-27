@@ -248,11 +248,11 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol has to = NULL
 #------------------------------------------------------
-symb_currency_from <- "EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_from <- "AUD"#"EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
 symb_currency_to <- "USD"
 # OR
-stock_symbol <- NULL#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
-#currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X", "GBPUSD=X", "AUDUSD=X", "INR=X")
+stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+crypto_symbol <- NULL#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
 time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
@@ -285,9 +285,21 @@ print(time_step)
 # df_ohlcv <- as.data.frame(tbl_ohlcv)
 time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
 
-av_api_key("HQBAWJK4Y3YW81VG")
-
 if(is.null(stock_symbol)){
+  if(is.null(symb_currency_from)){
+    symbol_domain <- "cryptocurrency"
+
+  }else{
+    symbol_domain <- "forex"
+  }
+}else{
+  symbol_domain <- "stocks"
+}
+
+print(symbol_domain)
+
+av_api_key("HQBAWJK4Y3YW81VG")
+if(symbol_domain == "forex"){
   #--------------------------------------------------
   # If forex
   #--------------------------------------------------
@@ -311,7 +323,8 @@ if(is.null(stock_symbol)){
     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
   }
   
-}else{
+}
+if(symbol_domain == "stocks"){
   #--------------------------------------------------
   # If stock
   #--------------------------------------------------
@@ -338,9 +351,27 @@ if(is.null(stock_symbol)){
       df_ohlcv <- as.data.frame(tbl_ohlcv)
       df_ohlcv$p <- df_ohlcv$adjusted.close
   }
-  
+}
+
+if(symbol_domain == "cryptocurrency"){
+  if(time_step_unit == "min"){
+    print("Intraday data not available for cryptocurrencies. Try daily or weekly.")
+  }
+    # If daily
+  if(time_step_unit == "daily"){
+    tbl_ohlcv <- crypto_symbol %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_DAILY", outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- df_ohlcv$adjusted_close
+  }
+  if(time_step_unit == "weekly"){
+    # If weekly
+    tbl_ohlcv <- crypto_symbol %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_WEEKLY", outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- df_ohlcv$adjusted_close
+  }
   
 }
+
 #--------------------------------------------------
 if(!is.null(starting_how_many_steps_ago)){
   ind_now <- nrow(df_ohlcv)
