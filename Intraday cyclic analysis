@@ -1,7 +1,7 @@
 ---
 title: "Intraday/daily/weekly forecast"
 author: "Ben Schiek"
-date: "`r Sys.time()`"
+date: "`r Sys.time()` (local time)"
 header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H}
@@ -246,17 +246,17 @@ get_cycles <- function(waveAnalysis){
 ```{r, echo=FALSE}
 #======================================================
 # Set parameters
-# If doing forex, then stock_symbol has to = NULL
+# If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "AUD"#"EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "USD"
+symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "JPY"
 # OR
-stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+stock_symbol <- NULL#SPY#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
 crypto_symbol <- NULL#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "daily" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-starting_how_many_steps_ago <- 500
+starting_how_many_steps_ago <- 450
 per_ema_short <- 21
 per_ema_for_detrend <- 34
 per_ema_long <- 55
@@ -268,6 +268,12 @@ n_lookBack_zoom <- 34
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
 upperPeriod <- 2^9 #floor(nrow(df_wave)/3)*dt, #2^7
+#------------------------------------------------------
+# Troubleshooting tips:
+# -Lower n_max_periods
+# -For intraday, only time_step of 5min and 30min seem to work
+# -Just hit retry, sometimes it's an internet connection issue
+# -Lower starting_how_many_steps_ago. (Has to be less than nrow of dataset.)
 #------------------------------------------------------
 if(!is.null(stock_symbol)){
   print(stock_symbol)
@@ -373,16 +379,25 @@ if(symbol_domain == "cryptocurrency"){
 }
 
 #--------------------------------------------------
+# Change time zone to New York, remove weekends
+colnames(df_ohlcv)[1] <- "date"
+this_tz <- "America/New_York"
+attr(df_ohlcv$date, "tzone") <- this_tz
+df_ohlcv <- df_ohlcv[!weekdays(df_ohlcv$date) %in% c('Saturday', 'Sunday'), ]
+print(paste("Charts are in", this_tz, "time."))
+#--------------------------------------------------
 if(!is.null(starting_how_many_steps_ago)){
   ind_now <- nrow(df_ohlcv)
+  if(starting_how_many_steps_ago > ind_now){
+    print("starting_how_many_steps_ago is greater than time series length.")
+print(paste("starting_how_many_steps_ago ="), starting_how_many_steps_ago)
+print(paste("steps in time series ="), ind_now)
+print("Reduce starting_how_many_steps_ago.")
+  }
   df_ohlcv <- df_ohlcv[(ind_now - starting_how_many_steps_ago + 1):ind_now, ]
 }
 #--------------------------------------------------
 
-#nrow(df_ohlcv)
-colnames(df_ohlcv)[1] <- "date"
-attr(df_ohlcv$date, "tzone") <- "America/New_York"
-#--
 df <- df_ohlcv[, c("date", "p")]
 df <- as.data.frame(df)
 #df <- df %>% mutate(date = as.POSIXct(date, format = "%Y-%m-%d %H:%M:%S"))
