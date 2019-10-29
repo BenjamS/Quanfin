@@ -248,19 +248,19 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_from <- "EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
 symb_currency_to <- "JPY"
 # OR
-stock_symbol <- NULL#SPY#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
 crypto_symbol <- NULL#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "daily" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 starting_how_many_steps_ago <- 450
 per_ema_short <- 21
 per_ema_for_detrend <- 34
 per_ema_long <- 55
-n_max_periods <- 4
+n_max_periods <- 5
 backtest_fraction <- 1 / 4
 n_lookAhead <- 89
 n_lookAhead_zoom <- n_lookAhead
@@ -274,6 +274,8 @@ upperPeriod <- 2^9 #floor(nrow(df_wave)/3)*dt, #2^7
 # -For intraday, only time_step of 5min and 30min seem to work
 # -Just hit retry, sometimes it's an internet connection issue
 # -Lower starting_how_many_steps_ago. (Has to be less than nrow of dataset.)
+# -cryptocurrency doesn't seem to be working so just leave crypto_symbol = NULL
+# -For stocks intraday, only 5min time step seems to work.
 #------------------------------------------------------
 if(!is.null(stock_symbol)){
   print(stock_symbol)
