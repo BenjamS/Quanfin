@@ -248,13 +248,13 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "JPY"
+symb_currency_from <- NULL#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "USD"
 # OR
-stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+stock_symbol <- "SPY"#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
 crypto_symbol <- NULL#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 starting_how_many_steps_ago <- 450
 per_ema_short <- 21
