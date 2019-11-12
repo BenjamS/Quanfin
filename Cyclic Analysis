@@ -1,9 +1,13 @@
 ---
-title: "Trade Strategy"
+title: "Intraday/daily/weekly forecast"
 author: "Ben Schiek"
-date: "`r Sys.Date()`"
+date: "`r Sys.time()` (local time)"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
 output: 
   pdf_document:
+    fig_caption: true
     number_sections: true
     latex_engine: xelatex
 mainfont: Garamond
@@ -66,40 +70,44 @@ fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAh
   df_fut <- as.data.frame(do.call(cbind, list_fut))
   predict_wave <- predict(linmod, df_fut, interval = "prediction")  
   print(summod)
-
+  
   list_out <- list(fitted_wave, predict_wave, summod)
   return(list_out)
 }
 #========================================================================
 plot_validation <- function(yhat, ypredict, df_wave){
-  df_plot <- df_wave
+  df_plot <- df_wave[, c("date", "date_chr", "p", "ema", "dt")]
   df_plot$yhat <- c(yhat, ypredict[, 1])
-  df_plot$set <- NA
-  df_plot$set[ind_fit] <- "fit"
-  df_plot$set[ind_test] <- "test"
+  ind_divide <- length(yhat)
+  # df_plot$set <- NA
+  # df_plot$set[ind_fit] <- "fit"
+  # df_plot$set[ind_test] <- "test"
   df_plot$yhat_p <- df_plot$p + df_plot$yhat
+  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
   df_plot <- df_plot %>% gather(Type, Value, p:yhat_p)
   df_plot$Value <- as.numeric(df_plot$Value)
   #unique(df_plot$Type)
   df_plot_ts <- subset(df_plot, Type %in% c("p", "ema", "yhat_p"))
   df_plot_ts_dtFit <- subset(df_plot, Type %in% c("dt", "yhat"))
-
+  
   n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
   n_types_ts <- length(unique(df_plot_ts$Type))
   distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit + n_types_ts)
   colors_dtFit <- distinct_colors[1:n_types_fit]
   colors_ts <- distinct_colors[(n_types_fit + 1):(n_types_fit + n_types_ts)]
   
+  df_plot_ts_dtFit$date_chr <- as.factor(df_plot_ts_dtFit$date_chr)
   df_plot_dt <- subset(df_plot_ts_dtFit, Type == "dt")
   df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
   
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
+  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date_chr, y = Value, color = Type, group = 1), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_dt, aes(x = date_chr, y = Value, color = Type, group = 1))#, color = colors_dtFit[1])
   gg <- gg + scale_color_manual(values = colors_dtFit)
-  gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], lwd = 1, color = "violet")
   gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + geom_vline(aes(xintercept = ind_divide), lwd = 1, color = "violet")
   gg <- gg + theme_bw()
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + theme(axis.title = element_blank(),
                    legend.title = element_blank(),
                    #legend.position = "top",
@@ -108,15 +116,18 @@ plot_validation <- function(yhat, ypredict, df_wave){
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   gg_dtFit <- gg
   
+  df_plot_ts$date_chr <- as.factor(df_plot_ts$date_chr)
   df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
   df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date, y = Value, group = Type, color = Type))
-  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date, y = Value, color = Type), lwd = 1.1)
-  gg <- gg + scale_color_manual(values = colors_ts)
-  gg <- gg + geom_vline(xintercept = df_plot$date[ind_test[1]], color = "violet", lwd = 1)
+  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
+  gg <- gg + scale_color_manual(values = colors_ts[1:2])
+  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date_chr, y = Value, group = 1), color = colors_ts[3], lwd = 1.1)
+  gg <- gg + geom_vline(aes(xintercept = ind_divide), color = "violet", lwd = 1)
   gg <- gg + theme_bw()
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + theme(axis.title = element_blank(),
+                   axis.text.x = element_text(angle = 60, hjust = 1),
                    #legend.position = "bottom",
                    legend.title = element_blank())
   gg_ts <- gg
@@ -124,42 +135,81 @@ plot_validation <- function(yhat, ypredict, df_wave){
   gg_together <- gg_dtFit + gg_ts + plot_layout(ncol = 1, heights = c(2, 1))
   
   print(gg_together)
+  
 }
 #========================================================================
-plot_prediction <- function(yhat, ypredict, df_wave){
-  n_end <- nrow(df_wave)
-  df_wave$yhat <- yhat
-  df_wave$set <- "fit"
-  df_wave$t <- NULL
-  date_fut <- seq(as.Date(df_wave$date[nrow(df_wave)] + 1), as.Date(df_wave$date[nrow(df_wave)] + 2 * n_lookAhead), by = 1)
+plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21){
+  ind_end <- nrow(df_wave)
+  df_plot <- df_wave[, c("date", "date_chr", "dt")]
+  df_plot$yhat <- yhat
+  df_plot$set <- "fit"
+  df_plot$t <- NULL
+  #---------------------------------------
+  time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
+  if(time_step_unit == "min"){
+    time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+    time_step_num <- 60 * time_step_num 
+  }
+  
+  if(time_step_unit == "daily"){
+    time_step_num <- 1
+  }
+  
+  if(time_step_unit == "weekly"){
+    time_step_num <- 7
+  }
+  #---------------------------------------
+  future_start <- df_plot$date[nrow(df_plot)] + time_step_num
+  future_stop <- df_plot$date[nrow(df_plot)] + 2 * time_step_num * n_lookAhead
+  date_fut <- seq(future_start, future_stop, by = time_step_num)
   date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
   #length(date_fut)
   date_fut <- date_fut[1:n_lookAhead]
-  df_add <- data.frame(date = date_fut, p = NA, ema = NA, dt = NA, yhat = ypredict[, 1], set = "predict")
-  df_wave <- rbind(df_wave, df_add)
-  df_plot <- df_wave
-  df_plot <- df_plot %>% gather(Type, Value, p:yhat)
-  #unique(df_plot$Type)
-  df_plot_ts_dtFit <- subset(df_plot, Type %in% c("dt", "yhat"))
-  n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
-  distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit)
+  df_add <- data.frame(date = date_fut, date_chr = as.character(date_fut), dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_plot <- rbind(df_plot, df_add)
+  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
+  distinct_colors <- randomcoloR::distinctColorPalette(k = 2)
   colors_dtFit <- distinct_colors
+  # df_plot_dt <- subset(df_plot, Type == "dt")
+  # df_plot_dtFit <- subset(df_plot, Type == "yhat")
   
-  df_plot_dt <- subset(df_plot_ts_dtFit, Type == "dt")
-  df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date, y = Value, color = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-  gg <- gg + geom_line(data = df_plot_dt, aes(x = date, y = Value, color = Type))#, color = colors_dtFit[1])
-  gg <- gg + scale_color_manual(values = colors_dtFit)
-  gg <- gg + geom_vline(xintercept = df_plot$date[n_end], lwd = 1, color = "violet")
+  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
+  gg <- gg + geom_vline(xintercept = ind_end, lwd = 1, color = "violet")
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
+                   axis.text.x = element_text(angle = 60, hjust = 1),
                    legend.title = element_blank(),
                    #legend.position = "top",
                    axis.ticks.x = element_blank())
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   print(gg)
+  
+  
+  # Zoom in
+  ind_end_new <- n_lookBack_zoom
+  df_plot_zoom <- df_plot[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom), ]
+  my_breaks_zoom <- df_plot_zoom$date_chr[seq.int(1, length(df_plot_zoom$date_chr), length.out = 25)]
+  gg <- ggplot()
+  gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
+  gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
+  gg <- gg + geom_vline(xintercept = ind_end_new, lwd = 1, color = "violet")
+  gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
+  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + theme_bw()
+  gg <- gg + theme(axis.title = element_blank(),
+                   axis.text.x = element_text(angle = 60, hjust = 1),
+                   legend.title = element_blank(),
+                   #legend.position = "top",
+                   axis.ticks.x = element_blank())
+  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  print(gg)
+  
+  
+  
 }
 #========================================================================
 get_cycles <- function(waveAnalysis){
@@ -193,152 +243,319 @@ get_cycles <- function(waveAnalysis){
 ```
 
 
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}Basic plot of (bottom) time series with an EMA, and (top) the ts detrended.", fig.height=3, fig.width=5, echo=FALSE}
+```{r, echo=FALSE}
 #======================================================
 # Set parameters
-t_units <- "days"
-this_guy <- "NIB"
-starting_how_many_days_ago <- 500
-per_ema <- 21
-n_lookAhead <- 50
+# If doing forex, then stock_symbol and crypto_symbol have to = NULL
+#------------------------------------------------------
+symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "JPY"
+# OR stocks
+stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+# OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
+crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
+crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
+#------------------------------------------------------
+time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+#------------------------------------------------------
+#starting_how_many_steps_ago <- 370
+max_length <- 600 # max length of time series
+per_ema_short <- 13
+per_ema_for_detrend <- 21
+per_ema_long <- 34
+n_max_periods <- 5
+backtest_fraction <- 1 / 4
+n_lookAhead <- 89
+n_lookAhead_zoom <- n_lookAhead
+n_lookBack_zoom <- 34
+#waveletComp params:
+lowerPeriod <- 2^2 #2 * dt, #2^1
+upperPeriod <- 2^9 #floor(nrow(df_wave)/3)*dt, #2^7
+#------------------------------------------------------
+# Troubleshooting tips:
+# -Lower n_max_periods
+# -Just hit retry, sometimes it's an internet connection issue
+# -Lower starting_how_many_steps_ago. (Has to be less than nrow of dataset.)
+#------------------------------------------------------
+if(!is.null(stock_symbol)){
+  print(stock_symbol)
+}else{
+  if(is.null(symb_currency_from)){
+    print(paste(crypto_symbol_from, "/", crypto_symbol_to))
+  }else{
+    print(paste(symb_currency_from, "/", symb_currency_to))
+  }
+}
+print(time_step)
+```
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}Basic plot of (bottom) time series with an EMA, and (top) the ts detrended.", fig.height=4, fig.width=7, echo=FALSE}
 #======================================================
-fromdate <- Sys.Date() - starting_how_many_days_ago
-tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
-df_ohlcv <- as.data.frame(tbl_ohlcv)
-# av_api_key("HQBAWJK4Y3YW81VG")
-# df_ohlcv <- this_guy %>%
-#   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = "5min",
-#          outputsize = "full")
-#nrow(df_ohlcv)
-df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#fromdate <- Sys.Date() - starting_how_many_days_ago
+# tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
+#tbl_ohlcv <- tq_get(currency_symbs, get = "stock.prices", from = fromdate)
+# df_ohlcv <- as.data.frame(tbl_ohlcv)
+time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
+
+if(is.null(stock_symbol)){
+  if(is.null(symb_currency_from)){
+    symbol_domain <- "cryptocurrency"
+
+  }else{
+    symbol_domain <- "forex"
+  }
+}else{
+  symbol_domain <- "stocks"
+}
+
+print(symbol_domain)
+
+av_api_key("HQBAWJK4Y3YW81VG")
+if(symbol_domain == "forex"){
+  #--------------------------------------------------
+  # If forex
+  #--------------------------------------------------
+  if(time_step_unit == "min"){
+    # If intraday
+    tbl_ohlcv <- tq_get("", get = "alphavantager", av_fun = "FX_INTRADAY", interval = time_step, from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+    
+  }
+  if(time_step_unit == "daily"){
+    # If daily
+    tbl_ohlcv <- tq_get("", get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  }
+  if(time_step_unit == "weekly"){
+    # If weekly
+    tbl_ohlcv <- tq_get("", get = "alphavantager", av_fun = "FX_WEEKLY", from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  }
+  
+}
+if(symbol_domain == "stocks"){
+  #--------------------------------------------------
+  # If stock
+  #--------------------------------------------------
+  if(time_step_unit == "min"){
+    # If intraday
+    tbl_ohlcv <- stock_symbol %>%
+      tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") 
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  }
+  if(time_step_unit == "daily"){
+    # If daily
+    #fromdate <- Sys.Date() - starting_how_many_days_ago
+    #tbl_ohlcv <- tq_get(stock_symbol, get = "stock.prices", from = fromdate)
+    tbl_ohlcv <- stock_symbol %>%
+      tq_get(get = "alphavantager", av_fun = "TIME_SERIES_DAILY_ADJUSTED", outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- df_ohlcv$adjusted_close
+  }
+  if(time_step_unit == "weekly"){
+    # If weekly
+    tbl_ohlcv <- stock_symbol %>%
+      tq_get(get = "alphavantager", av_fun = "TIME_SERIES_WEEKLY_ADJUSTED", outputsize = "full")
+      df_ohlcv <- as.data.frame(tbl_ohlcv)
+      df_ohlcv$p <- df_ohlcv$adjusted.close
+  }
+}
+
+if(symbol_domain == "cryptocurrency"){
+  #--------------------------------------------------
+  # If cryptocurrency
+  #--------------------------------------------------
+  if(time_step_unit == "min"){
+    print("Intraday data not available for cryptocurrencies. Try daily or weekly.")
+  }
+    # If daily
+  if(time_step_unit == "daily"){
+    tbl_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_DAILY", market = crypto_symbol_to)
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, 2:4]) / 3
+  }
+  if(time_step_unit == "weekly"){
+    # If weekly
+    tbl_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_WEEKLY", market = crypto_symbol_to, outputsize = "full")
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- rowSums(df_ohlcv[, 2:4]) / 3
+  }
+  
+}
+
+#--------------------------------------------------
+# Change time zone to New York, remove weekends
 colnames(df_ohlcv)[1] <- "date"
-#--
+this_tz <- "America/New_York"
+attr(df_ohlcv$date, "tzone") <- this_tz
+df_ohlcv <- df_ohlcv[!weekdays(df_ohlcv$date) %in% c('Saturday', 'Sunday'), ]
+print(paste("Charts are in", this_tz, "time."))
+#--------------------------------------------------
+# if(!is.null(starting_how_many_steps_ago)){
+#   ind_now <- nrow(df_ohlcv)
+#   if(starting_how_many_steps_ago > ind_now){
+#     print("starting_how_many_steps_ago is greater than time series length.")
+# print(paste("starting_how_many_steps_ago ="), starting_how_many_steps_ago)
+# print(paste("steps in time series ="), ind_now)
+# print("Reduce starting_how_many_steps_ago.")
+#   }
+#   df_ohlcv <- df_ohlcv[(ind_now - starting_how_many_steps_ago + 1):ind_now, ]
+# }
+ind_now <- nrow(df_ohlcv)
+if(ind_now > max_length){
+    df_ohlcv <- df_ohlcv[(ind_now - max_length + 1):ind_now, ]
+}
+#--------------------------------------------------
+
 df <- df_ohlcv[, c("date", "p")]
 df <- as.data.frame(df)
 #df <- df %>% mutate(date = as.POSIXct(date, format = "%Y-%m-%d %H:%M:%S"))
 o <- apply(df, 2, function(x) length(which(is.na(x))))
 #table(o)
-#df[, -1] <- na.spline(df[, -1])
-#df_ema <- as.data.frame(apply(df[, -1], 2, EMA, per_ema))
-#df$p <- log(df$p)
-df$ema <- EMA(df$p, per_ema)
+ind_na <- which(is.na(df$p))
+if(length(ind_na) != 0){
+  df$p <- na.approx(df$p)
+}
+#--------------------------------------------------------------
+df$ema <- SMA(df$p, per_ema_for_detrend)
 df$dt <- df$p - df$ema
-gathercols <- colnames(df)[2:ncol(df)]
+#--------------------------------------------------------------
+# convert to character column and set up handy columns for making breaks
+df <- df %>%
+  mutate(date_chr = as.character(df$date),
+         day = lubridate::day(date),
+         hour = lubridate::hour(date),
+         minute = lubridate::minute(date),
+         new_day = if_else(day != lag(day) | is.na(lag(day)), 1, 0))
+# breaks equally spaced
+my_breaks <- df$date_chr[seq.int(1, length(df$date_chr), length.out = 30)]
+#my_breaks <- df[df$minute == 0,]$date_chr
+#my_breaks <- df[df$new_day == 1,]$date_chr
+#------------------------------------------------------------
+# Basic overview plot
+gg <- ggplot(df, aes(x = date_chr, y = dt, group = 1))
+gg <- gg + geom_line()
+gg <- gg + scale_x_discrete(breaks = my_breaks)
+gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
+                 axis.title.x = element_blank())
+gg_dt <- gg
+#------------------------------------------------------------
+df_plot <- df[, c("date_chr", "p", "ema")]
+colnames(df_plot)[3] <- paste("ema", per_ema_for_detrend)
+df_plot$ema_short <- EMA(df$p, per_ema_short)
+df_plot$ema_long <- EMA(df$p, per_ema_long)
+colnames(df_plot)[4] <- paste("ema", per_ema_short)
+colnames(df_plot)[5] <- paste("ema", per_ema_long)
 
-df_plot <- df
-df_plot <- df_plot %>% gather_("Type", "Value", gathercols)
-df_plot$Subtype <- NA
-df_plot$Subtype[which(df_plot$Type == "ema")] <- "EMA"
-df_plot$Subtype[which(df_plot$Type == "p")] <- "spot"
-df_plot$Type[-which(df_plot$Type == "dt")] <- "time series"
-df_plot$Type[which(df_plot$Type == "dt")] <- "detrended"
+gathercols <- colnames(df_plot)[2:ncol(df_plot)]
+df_plot <- df_plot %>% gather_("Type", "p", gathercols)
 
-gg <- ggplot()
-gg <- gg + geom_line(data = df_plot, aes(x = date, y = Value, color = Subtype))
-gg <- gg + facet_wrap(~Type, ncol = 1, scales = "free_y")
-gg <- gg + theme(legend.position = "none")
-gg
+gg <- ggplot(df_plot, aes(x = date_chr, y = p, group = Type, color = Type))
+gg <- gg + geom_line()
+gg <- gg + scale_x_discrete(breaks = my_breaks)
+gg <- gg + theme(legend.title = element_blank(),
+                 axis.title.x = element_blank(),
+                 axis.text.x = element_blank())
+gg_raw <- gg
+#------------------------------------------------------------
+gg_raw / gg_dt / plot_layout(ncol = 1)
+#------------------------------------------------------------
 
 ```
-
-
-# Introduction
-
-Figure \ref{fig:basic} is a basic plot of the `r this_guy` time series, from `r toString(fromdate)` to `r Sys.Date()`. The bottom panel is the time series together with a `r toString(per_ema)` step exponential moving average. The time steps are `r t_units`.
-
-\pagebreak
-
-# Extraction of periodicity
-
-In Figure \ref{fig:periods}, the ts' main cycle lengths (periods) are extracted using continuous wavelet based analysis (WaveletComp package). The lovely WaveletComp graphical output is included in Figure \ref{fig:waveComp}.
 
 ```{r, echo=FALSE, include=FALSE}
-  # Detect periodicity
-  df_wave <- df[ -c(1:(per_ema + 1)),]
-  #df_wave$dt <- scale(df_wave$dt)
-  waveAnalysis <- analyze.wavelet(df_wave, "dt",
-                          loess.span = 0,
-                          dt = 1, dj = 1/250,
-                          lowerPeriod = 2^3,
-                          upperPeriod = 2^9,
-                          make.pval = TRUE, n.sim = 10,
-                          verbose = F)
+#------------------------------------------------------------
+df_wave <- df[-c(1:(per_ema_for_detrend + 1)), c("date", "date_chr", "p", "ema", "dt")]
+if(time_step_unit == "min"){
+  time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+  dt <- time_step_num / 60
+  dj <- 1 / 20
+  this_period_label <- "period (minutes)"
+}else{
+  dt <- 1 #(if daily data)
+  dj <- 1 / 250
+  this_period_label <- "period (days)"
+}
 
+#------------------------------------------------------------
+waveAnalysis <- analyze.wavelet(df_wave, "dt",
+                                loess.span = 0,
+                                dt, #dt = time_step_num / 60 #if time_unit=min
+                                dj,
+                                lowerPeriod,
+                                upperPeriod,
+                                make.pval = TRUE, n.sim = 10,
+                                verbose = F)
+#------------------------------------------------------------
 ```
-
 
 ```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:periods}Extraction of the ts' main cycle period lengths using the WaveletComp package.", fig.width=6, fig.height=3, echo=FALSE}
-# Get/see main periods
-#list(df_wave, per_vec, df_periodogram, gg_periodogram, wtImage)
+#------------------------------------------------------------
+# Plot beautiful waveComp analysis
+# wt.image(waveAnalysis, n.levels = 250, periodlab = "period (active minutes)",legend.params = list(lab = "wavelet power levels"), spec.time.axis = list(at = ind, labels = df_wave$date[ind]))
+
+
+wtImage <- wt.image(waveAnalysis, n.levels = 250, periodlab = this_period_label, legend.params = list(lab = "wavelet power levels", mar = 4.7))
+# my.rec <- reconstruct(my.w)
+# x.rec <- my.rec$series$x.r  # x: name of original series
+#------------------------------------------------------------
+# Get periods and plot periodogram
 df_mainCycles <- get_cycles(waveAnalysis)
-per_vec <- df_mainCycles$Period
 
 kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-
-
+#------------------------------------------------------------
 ```
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:waveComp}WaveletComp package graphic output.", fig.width=6, fig.height=3, echo=FALSE}
-
-  wtImage <- wt.image(waveAnalysis, color.key = "quantile", n.levels = 250,
-           legend.params = list(lab = "wavelet power levels", mar = 4.7))
-  # my.rec <- reconstruct(my.w)
-  # x.rec <- my.rec$series$x.r  # x: name of original series
-
-```
-
 
 ```{r, echo=FALSE, include=FALSE}
-# Validate
-n_test = round(1 / 4 * nrow(df_wave))
+#------------------------------------------------------------
+# Get validate (backtest) info
+n_test = round(backtest_fraction * nrow(df_wave))
 ind_fit <- 1:(nrow(df_wave) - n_test)
 ind_test <- setdiff(1:nrow(df_wave), ind_fit)
 ts <- df_wave$dt[ind_fit]
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_test)
+if(time_step_unit == "min"){
+  per_vec <- df_mainCycles$Period * 60 / time_step_num
+}else{
+  per_vec <- df_mainCycles$Period
+}
+out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_test)
 yhat_validate <- out_fitWave[[1]]
 ypredict_validate <- out_fitWave[[2]]
-
-# Predict
-
+#------------------------------------------------------------
+# Get predict info
 ts <- df_wave$dt
-out_fitWave <- fitWave(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead)
+out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_lookAhead)
 yhat_pred <- out_fitWave[[1]]
 ypredict_pred <- out_fitWave[[2]]
 summod <- out_fitWave[[3]]
 
-
 ```
 
-\pagebreak
+```{r, echo=FALSE}  
 
-# Cyclic model
-
-A cyclic model made up of sine and cosine waves is constructed below from the periods extracted in the last step.
-
-```{r, echo=FALSE}
 kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
 ```
 
-\pagebreak
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:valid}Backtest of cyclic model.", fig.height=4, fig.width=7, echo=FALSE}
 
 ## Backtest
-
-The cyclic model is backtested over a `r toString(n_test)` step period in Figure \ref{fig:validate}.
-
-
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:validate}Backtest of the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
 
 plot_validation(yhat_validate, ypredict_validate, df_wave)
 
 ```
 
 
+```{r, fig.show = 'hold', fig.cap=c("\\label{fig:pred}Model's prediction.", "\\label{fig:pred_zoom}Zoom in on decisionmaking time window of model's prediction."), fig.align='center', fig.height=4, fig.width=7, echo=FALSE}
+
 ## Prediction
+plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom)
+#--------------------------------------------------------------
 
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:pred}Prediction based on the cyclic model.", fig.width=6, fig.height=3, echo=FALSE}
 
-plot_prediction(yhat_pred, ypredict_pred, df_wave)
 
 ```
-
-In Figure \ref{fig:pred}, a prediction of where the ts is headed `r toString(n_lookAhead)` `r t_units` into the future is made using the model.
