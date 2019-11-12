@@ -248,7 +248,7 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_from <- "EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
 symb_currency_to <- "JPY"
 # OR stocks
 stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
@@ -256,14 +256,15 @@ stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+#------------------------------------------------------
+n_max_periods <- 5
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
-max_length <- 600 # max length of time series
+max_length <- 1000 # max length of time series
 per_ema_short <- 13
 per_ema_for_detrend <- 21
 per_ema_long <- 34
-n_max_periods <- 5
 backtest_fraction <- 1 / 4
 n_lookAhead <- 89
 n_lookAhead_zoom <- n_lookAhead
@@ -276,6 +277,7 @@ upperPeriod <- 2^9 #floor(nrow(df_wave)/3)*dt, #2^7
 # -Lower n_max_periods
 # -Just hit retry, sometimes it's an internet connection issue
 # -Lower starting_how_many_steps_ago. (Has to be less than nrow of dataset.)
+# -N
 #------------------------------------------------------
 if(!is.null(stock_symbol)){
   print(stock_symbol)
