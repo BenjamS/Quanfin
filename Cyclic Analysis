@@ -248,22 +248,22 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "EUR"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "JPY"
+symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "CAD"
 # OR stocks
-stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI"#"GC"#"NG"#"CL"
+stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"ZC=F"#"DAX"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-n_max_periods <- 5
+n_max_periods <- 3
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 1000 # max length of time series
-per_ema_short <- 13
-per_ema_for_detrend <- 21
+per_ema_short <- 8
+per_ema_for_detrend <- 13
 per_ema_long <- 34
 backtest_fraction <- 1 / 4
 n_lookAhead <- 89
@@ -291,7 +291,7 @@ if(!is.null(stock_symbol)){
 print(time_step)
 ```
 
-```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}Basic plot of (bottom) time series with an EMA, and (top) the ts detrended.", fig.height=4, fig.width=7, echo=FALSE}
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}(Top) Basic plot of time series with a moving average, and (bottom) the ts detrended.", fig.height=4, fig.width=7, echo=FALSE}
 #======================================================
 #fromdate <- Sys.Date() - starting_how_many_days_ago
 # tbl_ohlcv <- tq_get(this_guy, get = "stock.prices", from = fromdate)
