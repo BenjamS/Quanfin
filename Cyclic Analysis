@@ -248,30 +248,30 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "USD"#"USD"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "CAD"
+symb_currency_from <- NULL#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "JPY"
 # OR stocks
-stock_symbol <- NULL#"FXI"#"ICLN"#"SLV"#"IAU"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"ZC=F"#"DAX"
+stock_symbol <- "NG=F"#"^FTSE"#"FXI"#"ICLN"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-n_max_periods <- 3
+n_max_periods <- 5
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 1000 # max length of time series
-per_ema_short <- 8
-per_ema_for_detrend <- 13
-per_ema_long <- 34
+per_ema_short <- 5
+per_ema_for_detrend <- 70
+per_ema_long <- 61
 backtest_fraction <- 1 / 4
 n_lookAhead <- 89
 n_lookAhead_zoom <- n_lookAhead
 n_lookBack_zoom <- 34
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
-upperPeriod <- 2^9 #floor(nrow(df_wave)/3)*dt, #2^7
+upperPeriod <- 2^10 #floor(nrow(df_wave)/3)*dt, #2^7
 #------------------------------------------------------
 # Troubleshooting tips:
 # -Lower n_max_periods
@@ -423,7 +423,7 @@ if(length(ind_na) != 0){
   df$p <- na.approx(df$p)
 }
 #--------------------------------------------------------------
-df$ema <- SMA(df$p, per_ema_for_detrend)
+df$ema <- EMA(df$p, per_ema_for_detrend)
 df$dt <- df$p - df$ema
 #--------------------------------------------------------------
 # convert to character column and set up handy columns for making breaks
