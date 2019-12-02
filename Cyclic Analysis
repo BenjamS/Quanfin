@@ -27,11 +27,11 @@ library(xtable)
 #========================================================================
 # Define functions
 #========================================================================
-fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAhead = 30){
+fitWave <- function(ts, per_vec, pval_thresh = 0.01, n_lookAhead){
   n_t <- length(ts)
   t <- 1:n_t
-  regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
-  regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:n_max_periods), "] * t)", collapse = " + ")
+  regrsrs_sin <- paste0("sin(2 * pi / per_vec[", c(1:length(per_vec)), "] * t)", collapse = " + ")
+  regrsrs_cos <- paste0("cos(2 * pi / per_vec[", c(1:length(per_vec)), "] * t)", collapse = " + ")
   regrsrs <- paste(regrsrs_sin, regrsrs_cos, sep = " + ")
   this_formula <- as.formula(paste("ts ~ -1 +", regrsrs)[1])
   linmod <- lm(this_formula)
@@ -59,7 +59,6 @@ fitWave <- function(ts, per_vec, n_max_periods = 5, pval_thresh = 0.01, n_lookAh
     ind_rm <- which(pvals > pval_thresh)
   }
   fitted_wave <- fitted(linmod)
-  
   t <- (n_t + 1):(n_t + n_lookAhead)
   regrsrs_fut <- names(linmod$coefficients)
   #regrsrs_fut <- gsub("t", "t_fut", regrsrs_fut)
@@ -110,32 +109,30 @@ plot_validation <- function(yhat, ypredict, df_wave){
   gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + theme(axis.title = element_blank(),
                    legend.title = element_blank(),
-                   #legend.position = "top",
-                   axis.text.x = element_blank(),
-                   axis.ticks.x = element_blank())
+                   axis.text.x = element_text(angle = 60, hjust = 1))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   gg_dtFit <- gg
   
-  df_plot_ts$date_chr <- as.factor(df_plot_ts$date_chr)
-  df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
-  df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
-  gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
-  gg <- gg + scale_color_manual(values = colors_ts[1:2])
-  gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date_chr, y = Value, group = 1), color = colors_ts[3], lwd = 1.1)
-  gg <- gg + geom_vline(aes(xintercept = ind_divide), color = "violet", lwd = 1)
-  gg <- gg + theme_bw()
-  gg <- gg + scale_x_discrete(breaks = my_breaks)
-  gg <- gg + theme(axis.title = element_blank(),
-                   axis.text.x = element_text(angle = 60, hjust = 1),
-                   #legend.position = "bottom",
-                   legend.title = element_blank())
-  gg_ts <- gg
+  # df_plot_ts$date_chr <- as.factor(df_plot_ts$date_chr)
+  # df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
+  # df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
+  # gg <- ggplot()
+  # gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
+  # gg <- gg + scale_color_manual(values = colors_ts[1:2])
+  # gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date_chr, y = Value, group = 1), color = colors_ts[3], lwd = 1.1)
+  # gg <- gg + geom_vline(aes(xintercept = ind_divide), color = "violet", lwd = 1)
+  # gg <- gg + theme_bw()
+  # gg <- gg + scale_x_discrete(breaks = my_breaks)
+  # gg <- gg + theme(axis.title = element_blank(),
+  #                  axis.text.x = element_text(angle = 60, hjust = 1),
+  #                  #legend.position = "bottom",
+  #                  legend.title = element_blank())
+  # gg_ts <- gg
+  # 
+  # gg_together <- gg_dtFit + gg_ts + plot_layout(ncol = 1, heights = c(2, 1))
   
-  gg_together <- gg_dtFit + gg_ts + plot_layout(ncol = 1, heights = c(2, 1))
-  
-  print(gg_together)
-  
+  # print(gg_together)
+  print(gg_dtFit)
 }
 #========================================================================
 plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21){
@@ -218,7 +215,14 @@ get_cycles <- function(waveAnalysis){
   critPers <- df_periodogram$period[ind_critPoints]
   critPers
   #-------------------
-  gg <- ggplot(df_periodogram, aes(x = period, y = power))
+  u <- df_periodogram$period
+  if(max(u) > 1.5 * max(critPers)){
+    ind_rm <- which(u > 1.5 * max(critPers))
+    df_plot <- df_periodogram[-ind_rm, ]
+  }else{
+    df_plot <- df_periodogram
+  }
+  gg <- ggplot(df_plot, aes(x = period, y = power))
   gg <- gg + geom_line()
   gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.5)
   gg <- gg + theme_bw()
@@ -249,26 +253,23 @@ get_cycles <- function(waveAnalysis){
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
 symb_currency_from <- NULL#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "JPY"
+symb_currency_to <- "usd"
 # OR stocks
-stock_symbol <- "NG=F"#"^FTSE"#"FXI"#"ICLN"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F
+stock_symbol <- "ES=F"#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-n_max_periods <- 5
+power_threshold <- 0.63
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 1000 # max length of time series
-per_ema_short <- 5
-per_ema_for_detrend <- 70
-per_ema_long <- 61
+per_ema_for_detrend <- 233
 backtest_fraction <- 1 / 4
-n_lookAhead <- 89
-n_lookAhead_zoom <- n_lookAhead
-n_lookBack_zoom <- 34
+lookAhead_fraction <- 1 / 3
+lookBack_fraction <- 1 / 6
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
 upperPeriod <- 2^10 #floor(nrow(df_wave)/3)*dt, #2^7
@@ -394,7 +395,23 @@ if(symbol_domain == "cryptocurrency"){
 colnames(df_ohlcv)[1] <- "date"
 this_tz <- "America/New_York"
 attr(df_ohlcv$date, "tzone") <- this_tz
-df_ohlcv <- df_ohlcv[!weekdays(df_ohlcv$date) %in% c('Saturday', 'Sunday'), ]
+u <- df_ohlcv$date
+if(symbol_domain == "forex"){
+ # Remove after hours (Friday 16:00-Sunday 17:00) on Friday
+ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)[1]
+ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)[1]
+ind_rm <- ind_Fri_16h:ind_Sun_17h
+df_ohlcv <- df_ohlcv[-ind_rm, ]
+}
+# if(symbol_domain == "stocks"){
+#   if(stock_symbol == "ES=F"){
+#     df_ohlcv <- df_ohlcv[!weekdays(u) %in% c('Saturday', 'Sunday'), ]
+#     u <- df_ohlcv$date
+#     df_ohlcv <- df_ohlcv[!hour(u) %in% c(16:24, 0:8), ]
+#   }
+#   
+# }
+
 print(paste("Charts are in", this_tz, "time."))
 #--------------------------------------------------
 # if(!is.null(starting_how_many_steps_ago)){
@@ -442,16 +459,17 @@ my_breaks <- df$date_chr[seq.int(1, length(df$date_chr), length.out = 30)]
 gg <- ggplot(df, aes(x = date_chr, y = dt, group = 1))
 gg <- gg + geom_line()
 gg <- gg + scale_x_discrete(breaks = my_breaks)
+gg <- gg + geom_hline(yintercept = 0, color = "violet")
 gg <- gg + theme(axis.text.x = element_text(angle = 60, hjust = 1),
                  axis.title.x = element_blank())
 gg_dt <- gg
 #------------------------------------------------------------
 df_plot <- df[, c("date_chr", "p", "ema")]
 colnames(df_plot)[3] <- paste("ema", per_ema_for_detrend)
-df_plot$ema_short <- EMA(df$p, per_ema_short)
-df_plot$ema_long <- EMA(df$p, per_ema_long)
-colnames(df_plot)[4] <- paste("ema", per_ema_short)
-colnames(df_plot)[5] <- paste("ema", per_ema_long)
+# df_plot$ema_short <- EMA(df$p, per_ema_short)
+# df_plot$ema_long <- EMA(df$p, per_ema_long)
+# colnames(df_plot)[4] <- paste("ema", per_ema_short)
+# colnames(df_plot)[5] <- paste("ema", per_ema_long)
 
 gathercols <- colnames(df_plot)[2:ncol(df_plot)]
 df_plot <- df_plot %>% gather_("Type", "p", gathercols)
@@ -489,7 +507,7 @@ waveAnalysis <- analyze.wavelet(df_wave, "dt",
                                 dt, #dt = time_step_num / 60 #if time_unit=min
                                 dj,
                                 lowerPeriod,
-                                upperPeriod,
+                                upperPeriod, 
                                 make.pval = TRUE, n.sim = 10,
                                 verbose = F)
 #------------------------------------------------------------
@@ -515,8 +533,8 @@ kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped"
 ```{r, echo=FALSE, include=FALSE}
 #------------------------------------------------------------
 # Get validate (backtest) info
-n_test = round(backtest_fraction * nrow(df_wave))
-ind_fit <- 1:(nrow(df_wave) - n_test)
+n_backtest = round(backtest_fraction * nrow(df_wave))
+ind_fit <- 1:(nrow(df_wave) - n_backtest)
 ind_test <- setdiff(1:nrow(df_wave), ind_fit)
 ts <- df_wave$dt[ind_fit]
 if(time_step_unit == "min"){
@@ -524,13 +542,19 @@ if(time_step_unit == "min"){
 }else{
   per_vec <- df_mainCycles$Period
 }
-out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_test)
+if(!is.null(power_threshold)){
+# Keep only periods above a certain power threshold
+ind_keep <- which(df_mainCycles$Power > power_threshold)
+per_vec <- per_vec[ind_keep]
+}
+out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_backtest)
 yhat_validate <- out_fitWave[[1]]
 ypredict_validate <- out_fitWave[[2]]
 #------------------------------------------------------------
 # Get predict info
 ts <- df_wave$dt
-out_fitWave <- fitWave(ts, per_vec, n_max_periods, pval_thresh = 0.01, n_lookAhead)
+n_lookAhead <- round(lookAhead_fraction * length(ts))
+out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_lookAhead)
 yhat_pred <- out_fitWave[[1]]
 ypredict_pred <- out_fitWave[[2]]
 summod <- out_fitWave[[3]]
@@ -555,6 +579,8 @@ plot_validation(yhat_validate, ypredict_validate, df_wave)
 ```{r, fig.show = 'hold', fig.cap=c("\\label{fig:pred}Model's prediction.", "\\label{fig:pred_zoom}Zoom in on decisionmaking time window of model's prediction."), fig.align='center', fig.height=4, fig.width=7, echo=FALSE}
 
 ## Prediction
+n_lookAhead_zoom <- n_lookAhead
+n_lookBack_zoom <- round(lookBack_fraction * nrow(df_wave))
 plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom)
 #--------------------------------------------------------------
 
