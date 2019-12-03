@@ -252,21 +252,21 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "usd"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_from <- NULL#"GBP"#"AUD"#"EUR"#"AUD"
 symb_currency_to <- "jpy"
 # OR stocks
-stock_symbol <- NULL#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
+stock_symbol <- "^FTSE"#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- 0.1
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 1000 # max length of time series
-per_ema_for_detrend <- 34
+per_ema_for_detrend <- 144
 backtest_fraction <- 1 / 4
 lookAhead_fraction <- 1 / 3
 lookBack_fraction <- 1 / 6
@@ -303,7 +303,7 @@ time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]
 if(is.null(stock_symbol)){
   if(is.null(symb_currency_from)){
     symbol_domain <- "cryptocurrency"
-
+    
   }else{
     symbol_domain <- "forex"
   }
@@ -363,8 +363,8 @@ if(symbol_domain == "stocks"){
     # If weekly
     tbl_ohlcv <- stock_symbol %>%
       tq_get(get = "alphavantager", av_fun = "TIME_SERIES_WEEKLY_ADJUSTED", outputsize = "full")
-      df_ohlcv <- as.data.frame(tbl_ohlcv)
-      df_ohlcv$p <- df_ohlcv$adjusted.close
+    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    df_ohlcv$p <- df_ohlcv$adjusted.close
   }
 }
 
@@ -375,7 +375,7 @@ if(symbol_domain == "cryptocurrency"){
   if(time_step_unit == "min"){
     print("Intraday data not available for cryptocurrencies. Try daily or weekly.")
   }
-    # If daily
+  # If daily
   if(time_step_unit == "daily"){
     tbl_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_DAILY", market = crypto_symbol_to)
     df_ohlcv <- as.data.frame(tbl_ohlcv)
@@ -397,18 +397,20 @@ this_tz <- "America/New_York"
 attr(df_ohlcv$date, "tzone") <- this_tz
 u <- df_ohlcv$date
 if(symbol_domain == "forex"){
- # If forex, remove weekends (Friday 16:00-Sunday 17:00)
-ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)
-ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)
-ind_weekends_start <- ind_Fri_16h[c(1, (which(diff(ind_Fri_16h) != 1) + 1))]
-ind_weekends_stop <- ind_Sun_17h[c(1, (which(diff(ind_Sun_17h) != 1) + 1))]
-list_ind_rm <- list()
-for(i in 1:length(ind_weekends_start)){
-  ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
-  list_ind_rm[[i]] <- ind_rm
-}
-ind_rm <- do.call(c, list_ind_rm)
-df_ohlcv <- df_ohlcv[-ind_rm, ]
+  # If forex, remove weekends (Friday 16:00-Sunday 17:00)
+    ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)
+    ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)
+    if(length(ind_Fri_16h) != 0 & length(ind_Sun_17h) != 0){
+    ind_weekends_start <- ind_Fri_16h[c(1, (which(diff(ind_Fri_16h) != 1) + 1))]
+    ind_weekends_stop <- ind_Sun_17h[c(1, (which(diff(ind_Sun_17h) != 1) + 1))]
+    list_ind_rm <- list()
+    for(i in 1:length(ind_weekends_start)){
+      ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
+      list_ind_rm[[i]] <- ind_rm
+    }
+    ind_rm <- do.call(c, list_ind_rm)
+    df_ohlcv <- df_ohlcv[-ind_rm, ]
+  }
 }
 # if(symbol_domain == "stocks"){
 #   if(stock_symbol == "ES=F"){
@@ -433,7 +435,7 @@ print(paste("Charts are in", this_tz, "time."))
 # }
 ind_now <- nrow(df_ohlcv)
 if(ind_now > max_length){
-    df_ohlcv <- df_ohlcv[(ind_now - max_length + 1):ind_now, ]
+  df_ohlcv <- df_ohlcv[(ind_now - max_length + 1):ind_now, ]
 }
 #--------------------------------------------------
 
@@ -550,9 +552,9 @@ if(time_step_unit == "min"){
   per_vec <- df_mainCycles$Period
 }
 if(!is.null(power_threshold)){
-# Keep only periods above a certain power threshold
-ind_keep <- which(df_mainCycles$Power > power_threshold)
-per_vec <- per_vec[ind_keep]
+  # Keep only periods above a certain power threshold
+  ind_keep <- which(df_mainCycles$Power > power_threshold)
+  per_vec <- per_vec[ind_keep]
 }
 out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_backtest)
 yhat_validate <- out_fitWave[[1]]
