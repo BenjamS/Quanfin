@@ -252,21 +252,21 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- NULL#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "usd"
+symb_currency_from <- "usd"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "jpy"
 # OR stocks
-stock_symbol <- "ES=F"#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
+stock_symbol <- NULL#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "5min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-power_threshold <- 0.63
+power_threshold <- 0.1
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 1000 # max length of time series
-per_ema_for_detrend <- 233
+per_ema_for_detrend <- 34
 backtest_fraction <- 1 / 4
 lookAhead_fraction <- 1 / 3
 lookBack_fraction <- 1 / 6
@@ -397,10 +397,17 @@ this_tz <- "America/New_York"
 attr(df_ohlcv$date, "tzone") <- this_tz
 u <- df_ohlcv$date
 if(symbol_domain == "forex"){
- # Remove after hours (Friday 16:00-Sunday 17:00) on Friday
-ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)[1]
-ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)[1]
-ind_rm <- ind_Fri_16h:ind_Sun_17h
+ # If forex, remove weekends (Friday 16:00-Sunday 17:00)
+ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)
+ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)
+ind_weekends_start <- ind_Fri_16h[c(1, (which(diff(ind_Fri_16h) != 1) + 1))]
+ind_weekends_stop <- ind_Sun_17h[c(1, (which(diff(ind_Sun_17h) != 1) + 1))]
+list_ind_rm <- list()
+for(i in 1:length(ind_weekends_start)){
+  ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
+  list_ind_rm[[i]] <- ind_rm
+}
+ind_rm <- do.call(c, list_ind_rm)
 df_ohlcv <- df_ohlcv[-ind_rm, ]
 }
 # if(symbol_domain == "stocks"){
