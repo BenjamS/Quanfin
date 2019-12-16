@@ -145,43 +145,66 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
   if(time_step_unit == "min"){
     time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
-    time_step_num <- 60 * time_step_num 
+    #time_step_num <- 60 * time_step_num
   }
-  
-  if(time_step_unit == "daily"){
-    time_step_num <- 1
+
+  # if(time_step_unit == "daily"){
+  #   time_step_num <- 1
+  # }
+  # 
+  # if(time_step_unit == "weekly"){
+  #   time_step_num <- 7
+  # }
+  # #---------------------------------------
+  # future_start <- df_plot$date[nrow(df_plot)] + time_step_num
+  # future_stop <- df_plot$date[nrow(df_plot)] + 2 * time_step_num * n_lookAhead
+  # date_fut <- seq(future_start, future_stop, by = time_step_num)
+  # date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
+  # date_fut <- date_fut[1:n_lookAhead]
+  # date_fut_chr <- as.character(date_fut)
+  date_fut <- 1:n_lookAhead * time_step_num
+  if(time_step_unit == "min"){
+    date_fut <- round(date_fut / 60, 2)
+    time_step_unit <- "hrs"
   }
-  
   if(time_step_unit == "weekly"){
-    time_step_num <- 7
+    date_fut <- round(date_fut * 7, 2)
+    time_step_unit <- "days"
   }
+  if(time_step_unit == "daily"){
+    time_step_unit <- "days"
+  }
+
+  date_fut_chr <- as.character(paste("+", date_fut, time_step_unit))
   #---------------------------------------
-  future_start <- df_plot$date[nrow(df_plot)] + time_step_num
-  future_stop <- df_plot$date[nrow(df_plot)] + 2 * time_step_num * n_lookAhead
-  date_fut <- seq(future_start, future_stop, by = time_step_num)
-  date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
-  #length(date_fut)
-  date_fut <- date_fut[1:n_lookAhead]
-  df_add <- data.frame(date = date_fut, date_chr = as.character(date_fut), dt = NA, yhat = ypredict[, 1], set = "predict")
+#  df_add <- data.frame(date = date_fut, date_chr = date_fut_chr, dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_add <- data.frame(date_chr = date_fut_chr, dt = NA, yhat = ypredict[, 1], set = "predict")
+  df_plot$date <- NULL
   df_plot <- rbind(df_plot, df_add)
+  df_plot$date_chr <- factor(df_plot$date_chr, levels = df_plot$date_chr)
   my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
-  distinct_colors <- randomcoloR::distinctColorPalette(k = 2)
-  colors_dtFit <- distinct_colors
+  n <- 30
+  distinct_colors <- randomcoloR::distinctColorPalette(k = n)
+  colors_dtFit <- distinct_colors[sample(1:n, 2)]
   # df_plot_dt <- subset(df_plot, Type == "dt")
   # df_plot_dtFit <- subset(df_plot, Type == "yhat")
-  
+this_title <- paste(c(paste(time_step, "chart"),
+                      paste(per_ema_for_detrend, "step detrend")),
+                    collapse = ", ")  
   gg <- ggplot()
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_vline(xintercept = ind_end, lwd = 1, color = "violet")
+  gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks)
-  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + geom_hline(yintercept = 0, color = "violet", size = 1)
+  gg <- gg + labs(title = this_title)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
                    legend.title = element_blank(),
                    #legend.position = "top",
-                   axis.ticks.x = element_blank())
+                   axis.ticks.x = element_blank(),
+                   plot.title = element_text(size = 10))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   print(gg)
   
@@ -189,19 +212,21 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   # Zoom in
   ind_end_new <- n_lookBack_zoom
   df_plot_zoom <- df_plot[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom), ]
-  my_breaks_zoom <- df_plot_zoom$date_chr[seq.int(1, length(df_plot_zoom$date_chr), length.out = 25)]
+  my_breaks_zoom <- df_plot_zoom$date_chr[seq.int(1, length(df_plot_zoom$date_chr), length.out = 30)]
   gg <- ggplot()
   gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_vline(xintercept = ind_end_new, lwd = 1, color = "violet")
+  gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
-  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + geom_hline(yintercept = 0, color = "violet", size = 1)
+  gg <- gg + labs(title = this_title)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
                    legend.title = element_blank(),
                    #legend.position = "top",
-                   axis.ticks.x = element_blank())
+                   axis.ticks.x = element_blank(),
+                   plot.title = element_text(size = 10))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   print(gg)
   
@@ -224,7 +249,7 @@ get_cycles <- function(waveAnalysis){
   }
   gg <- ggplot(df_plot, aes(x = period, y = power))
   gg <- gg + geom_line()
-  gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.5)
+  gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
   gg <- gg + theme_bw()
   print(gg)
   #-------------------
@@ -252,21 +277,21 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- NULL#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "jpy"
+symb_currency_from <- "usd"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "cad"
 # OR stocks
-stock_symbol <- "^FTSE"#"^N225"#"^FTSE"#"FXI"##"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
-# OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
-crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
+stock_symbol <- NULL#"NK=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"#"RTY=F"
+  # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
+  crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-power_threshold <- 0.1
+power_threshold <- "percentile log 0.1" #"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
-max_length <- 1000 # max length of time series
-per_ema_for_detrend <- 144
+max_length <- 5000 # max length of time series
+per_ema_for_detrend <- 21
 backtest_fraction <- 1 / 4
 lookAhead_fraction <- 1 / 3
 lookBack_fraction <- 1 / 6
@@ -397,20 +422,33 @@ this_tz <- "America/New_York"
 attr(df_ohlcv$date, "tzone") <- this_tz
 u <- df_ohlcv$date
 if(symbol_domain == "forex"){
-  # If forex, remove weekends (Friday 16:00-Sunday 17:00)
-    ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)
-    ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17)
-    if(length(ind_Fri_16h) != 0 & length(ind_Sun_17h) != 0){
-    ind_weekends_start <- ind_Fri_16h[c(1, (which(diff(ind_Fri_16h) != 1) + 1))]
-    ind_weekends_stop <- ind_Sun_17h[c(1, (which(diff(ind_Sun_17h) != 1) + 1))]
-    list_ind_rm <- list()
-    for(i in 1:length(ind_weekends_start)){
-      ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
-      list_ind_rm[[i]] <- ind_rm
-    }
-    ind_rm <- do.call(c, list_ind_rm)
-    df_ohlcv <- df_ohlcv[-ind_rm, ]
+  # If forex, remove weekends (Friday 17:00-Sunday 17:00)
+  #ind_Fri_16h <- which(weekdays(u) == "Friday" & hour(u) == 16)
+  # if(length(ind_Fri_17h) != 0 & length(ind_Sun_17h) != 0){
+  # ind_weekends_start <- ind_Fri_16h[c(1, (which(diff(ind_Fri_16h) != 1) + 1))]
+  # ind_weekends_stop <- ind_Sun_17h[c(1, (which(diff(ind_Sun_17h) != 1) + 1))]
+  ind_Fri_17h <- which(weekdays(u) == "Friday" & hour(u) == 17 & minute(u) == 0)
+  ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17 & minute(u) == 0)
+  # if(length(ind_weekends_start) > length(ind_weekends_stop)){
+  #   ind_weekends_stop <- c(ind_weekends_stop, length(u))
+  if(ind_Fri_17h[1] > ind_Sun_17h[1]){
+    ind_Fri_17h <- c(1, ind_Fri_17h)
   }
+
+  if(length(ind_Fri_17h) > length(ind_Sun_17h)){
+    ind_Sun_17h <- c(ind_Sun_17h, length(u))
+    
+  }
+  #last_i <- length(ind_weekends_start)
+  last_i <- length(ind_Fri_17h)
+  list_ind_rm <- list()
+  for(i in 1:last_i){
+    # ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
+    ind_rm <- (ind_Fri_17h[i] + 1):ind_Sun_17h[i]
+    list_ind_rm[[i]] <- ind_rm
+  }
+  ind_rm <- do.call(c, list_ind_rm)
+  df_ohlcv <- df_ohlcv[-ind_rm, ]
 }
 # if(symbol_domain == "stocks"){
 #   if(stock_symbol == "ES=F"){
@@ -553,8 +591,19 @@ if(time_step_unit == "min"){
 }
 if(!is.null(power_threshold)){
   # Keep only periods above a certain power threshold
+  power_threshold_input <- power_threshold
+  power_threshold_str <- paste(as.character(stringr::str_extract_all(power_threshold, "[a-z]+")[[1]]), collapse = " ")
+  if(power_threshold_str == "drop lowest"){
+    power_threshold <- min(df_mainCycles$Power)
+  }
+  if(power_threshold_str == "percentile log"){
+    power_threshold_num <- as.numeric(stringr::str_extract_all(power_threshold, "[0-9.]+")[[1]])
+    x <- quantile(log(df_mainCycles$Power), power_threshold_num)
+    power_threshold <- exp(x)
+  }
   ind_keep <- which(df_mainCycles$Power > power_threshold)
   per_vec <- per_vec[ind_keep]
+
 }
 out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_backtest)
 yhat_validate <- out_fitWave[[1]]
@@ -591,8 +640,23 @@ plot_validation(yhat_validate, ypredict_validate, df_wave)
 n_lookAhead_zoom <- n_lookAhead
 n_lookBack_zoom <- round(lookBack_fraction * nrow(df_wave))
 plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom)
-#--------------------------------------------------------------
-
-
+#==============================================================
+#==============================================================
+#==============================================================
+# End
+#==============================================================
+print(symbol_domain)
+if(!is.null(stock_symbol)){
+  print(stock_symbol)
+}else{
+  if(is.null(symb_currency_from)){
+    print(paste(crypto_symbol_from, "/", crypto_symbol_to))
+  }else{
+    print(paste(symb_currency_from, "/", symb_currency_to))
+  }
+}
+print(paste("step =", time_step))
+print(paste(per_ema_for_detrend, "step detrend"))
+print(paste("power_threshold =", power_threshold_input))
 
 ```
