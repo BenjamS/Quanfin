@@ -147,7 +147,7 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
     time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
     #time_step_num <- 60 * time_step_num
   }
-
+  
   # if(time_step_unit == "daily"){
   #   time_step_num <- 1
   # }
@@ -174,10 +174,10 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   if(time_step_unit == "daily"){
     time_step_unit <- "days"
   }
-
+  
   date_fut_chr <- as.character(paste("+", date_fut, time_step_unit))
   #---------------------------------------
-#  df_add <- data.frame(date = date_fut, date_chr = date_fut_chr, dt = NA, yhat = ypredict[, 1], set = "predict")
+  #  df_add <- data.frame(date = date_fut, date_chr = date_fut_chr, dt = NA, yhat = ypredict[, 1], set = "predict")
   df_add <- data.frame(date_chr = date_fut_chr, dt = NA, yhat = ypredict[, 1], set = "predict")
   df_plot$date <- NULL
   df_plot <- rbind(df_plot, df_add)
@@ -188,9 +188,9 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   colors_dtFit <- distinct_colors[sample(1:n, 2)]
   # df_plot_dt <- subset(df_plot, Type == "dt")
   # df_plot_dtFit <- subset(df_plot, Type == "yhat")
-this_title <- paste(c(paste(time_step, "chart"),
-                      paste(per_ema_for_detrend, "step detrend")),
-                    collapse = ", ")  
+  this_title <- paste(c(paste(time_step, "chart"),
+                        paste(per_ema_for_detrend, "step detrend")),
+                      collapse = ", ")  
   gg <- ggplot()
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = dt, group = 1), color = colors_dtFit[2])
@@ -277,33 +277,31 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "usd"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "cad"
+symb_currency_from <- "usd"#"eur"#"aud"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "jpy"
 # OR stocks
-stock_symbol <- NULL#"NK=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"#"RTY=F"
-  # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
-  crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
+stock_symbol <- NULL#"ES=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
+# OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
+crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "1min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1" #"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 5000 # max length of time series
-per_ema_for_detrend <- 21
+per_ema_for_detrend <- 144
 backtest_fraction <- 1 / 4
-lookAhead_fraction <- 1 / 3
-lookBack_fraction <- 1 / 6
+lookAhead_fraction <- 1 / 6
+lookBack_fraction <- 1 / 8
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
 upperPeriod <- 2^10 #floor(nrow(df_wave)/3)*dt, #2^7
 #------------------------------------------------------
 # Troubleshooting tips:
-# -Lower n_max_periods
 # -Just hit retry, sometimes it's an internet connection issue
 # -Lower starting_how_many_steps_ago. (Has to be less than nrow of dataset.)
-# -N
 #------------------------------------------------------
 if(!is.null(stock_symbol)){
   print(stock_symbol)
@@ -431,24 +429,26 @@ if(symbol_domain == "forex"){
   ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17 & minute(u) == 0)
   # if(length(ind_weekends_start) > length(ind_weekends_stop)){
   #   ind_weekends_stop <- c(ind_weekends_stop, length(u))
-  if(ind_Fri_17h[1] > ind_Sun_17h[1]){
-    ind_Fri_17h <- c(1, ind_Fri_17h)
-  }
-
-  if(length(ind_Fri_17h) > length(ind_Sun_17h)){
-    ind_Sun_17h <- c(ind_Sun_17h, length(u))
+  if(length(ind_Fri_17h) != 0){
+    if(ind_Fri_17h[1] > ind_Sun_17h[1]){
+      ind_Fri_17h <- c(1, ind_Fri_17h)
+    }
     
+    if(length(ind_Fri_17h) > length(ind_Sun_17h)){
+      ind_Sun_17h <- c(ind_Sun_17h, length(u))
+      
+    }
+    #last_i <- length(ind_weekends_start)
+    last_i <- length(ind_Fri_17h)
+    list_ind_rm <- list()
+    for(i in 1:last_i){
+      # ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
+      ind_rm <- (ind_Fri_17h[i] + 1):ind_Sun_17h[i]
+      list_ind_rm[[i]] <- ind_rm
+    }
+    ind_rm <- do.call(c, list_ind_rm)
+    df_ohlcv <- df_ohlcv[-ind_rm, ]
   }
-  #last_i <- length(ind_weekends_start)
-  last_i <- length(ind_Fri_17h)
-  list_ind_rm <- list()
-  for(i in 1:last_i){
-    # ind_rm <- ind_weekends_start[i]:ind_weekends_stop[i]
-    ind_rm <- (ind_Fri_17h[i] + 1):ind_Sun_17h[i]
-    list_ind_rm[[i]] <- ind_rm
-  }
-  ind_rm <- do.call(c, list_ind_rm)
-  df_ohlcv <- df_ohlcv[-ind_rm, ]
 }
 # if(symbol_domain == "stocks"){
 #   if(stock_symbol == "ES=F"){
@@ -603,7 +603,7 @@ if(!is.null(power_threshold)){
   }
   ind_keep <- which(df_mainCycles$Power > power_threshold)
   per_vec <- per_vec[ind_keep]
-
+  
 }
 out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_backtest)
 yhat_validate <- out_fitWave[[1]]
