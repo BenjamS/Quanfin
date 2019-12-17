@@ -277,24 +277,24 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "usd"#"eur"#"aud"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "jpy"
+symb_currency_from <- "usd"#"gbp"#"eur"#"eur"#"aud"#"GBP"#"AUD"#"EUR"#"AUD"
+symb_currency_to <- "chf"
 # OR stocks
-stock_symbol <- NULL#"ES=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
+stock_symbol <- NULL#"ES=F"#"GC=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "1min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1" #"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 5000 # max length of time series
-per_ema_for_detrend <- 144
+per_ema_for_detrend <- 34
 backtest_fraction <- 1 / 4
-lookAhead_fraction <- 1 / 6
-lookBack_fraction <- 1 / 8
+lookAhead_fraction <- 1 / 8
+lookBack_fraction <- lookAhead_fraction * 0.5
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
 upperPeriod <- 2^10 #floor(nrow(df_wave)/3)*dt, #2^7
