@@ -148,13 +148,13 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
     #time_step_num <- 60 * time_step_num
   }
   
-  # if(time_step_unit == "daily"){
-  #   time_step_num <- 1
-  # }
-  # 
-  # if(time_step_unit == "weekly"){
-  #   time_step_num <- 7
-  # }
+  if(time_step_unit == "daily"){
+    time_step_num <- 1
+  }
+
+  if(time_step_unit == "weekly"){
+    time_step_num <- 7
+  }
   # #---------------------------------------
   # future_start <- df_plot$date[nrow(df_plot)] + time_step_num
   # future_stop <- df_plot$date[nrow(df_plot)] + 2 * time_step_num * n_lookAhead
@@ -277,23 +277,23 @@ get_cycles <- function(waveAnalysis){
 # Set parameters
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
-symb_currency_from <- "usd"#"gbp"#"eur"#"eur"#"aud"#"GBP"#"AUD"#"EUR"#"AUD"
-symb_currency_to <- "chf"
+symb_currency_from <- "eur"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
+symb_currency_to <- "usd"
 # OR stocks
-stock_symbol <- NULL#"ES=F"#"GC=F"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
+stock_symbol <- NULL#"^FTSE"#"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
 time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
-power_threshold <- "percentile log 0.1" #"drop lowest" #0.12
+power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 5000 # max length of time series
 per_ema_for_detrend <- 34
-backtest_fraction <- 1 / 4
-lookAhead_fraction <- 1 / 8
+backtest_fraction <- 1 / 5
+lookAhead_fraction <- 1 / 6
 lookBack_fraction <- lookAhead_fraction * 0.5
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * dt, #2^1
@@ -412,7 +412,10 @@ if(symbol_domain == "cryptocurrency"){
   }
   
 }
-
+#--------------------------------------------------
+u <- df_ohlcv$low
+ind <- which(u == 0)
+df_ohlcv$p[ind] <- mean(df_ohlcv$p[c((ind - 1), (ind + 1))])
 #--------------------------------------------------
 # Change time zone to New York, remove weekends
 colnames(df_ohlcv)[1] <- "date"
@@ -429,6 +432,7 @@ if(symbol_domain == "forex"){
   ind_Sun_17h <- which(weekdays(u) == "Sunday" & hour(u) == 17 & minute(u) == 0)
   # if(length(ind_weekends_start) > length(ind_weekends_stop)){
   #   ind_weekends_stop <- c(ind_weekends_stop, length(u))
+  
   if(length(ind_Fri_17h) != 0){
     if(ind_Fri_17h[1] > ind_Sun_17h[1]){
       ind_Fri_17h <- c(1, ind_Fri_17h)
@@ -449,6 +453,29 @@ if(symbol_domain == "forex"){
     ind_rm <- do.call(c, list_ind_rm)
     df_ohlcv <- df_ohlcv[-ind_rm, ]
   }
+  
+  u <- df_ohlcv$date
+  ind_newYearsEve_17h <- which(day(u) == 31 & month(u) == 12 & hour(u) == 17 & minute(u) == 0)
+  ind_newYearsDay_17h <- which(day(u) == 1 & month(u) == 1 & hour(u) == 17 & minute(u) == 0)
+  ind_xmasEve_17h <- which(day(u) == 24 & month(u) == 12 & hour(u) == 17 & minute(u) == 0)
+  ind_xmasDay_17h <- which(day(u) == 25 & month(u) == 12 & hour(u) == 17 & minute(u) == 0)
+
+  if(length(ind_newYearsEve_17h) != 0 & length(ind_newYearsDay_17h) != 0){
+    ind_rm <- ind_newYearsEve_17h:ind_newYearsDay_17h
+    df_ohlcv <- df_ohlcv[-ind_rm, ]
+  }
+  
+  if(length(ind_newYearsEve_17h) == 0 & length(ind_newYearsDay_17h) != 0){
+    ind_rm <- 1:ind_newYearsDay_17h
+    df_ohlcv <- df_ohlcv[-ind_rm, ]
+  }
+
+  if(length(ind_newYearsEve_17h) != 0 & length(ind_newYearsDay_17h) == 0){
+    ind_rm <- ind_newYearsEve_17h:length(u)
+    df_ohlcv <- df_ohlcv[-ind_rm, ]
+  }
+  
+  
 }
 # if(symbol_domain == "stocks"){
 #   if(stock_symbol == "ES=F"){
