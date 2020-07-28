@@ -1,11 +1,10 @@
-
-
 library(tidyverse)
 library(tidyquant)
 library(WaveletComp)
 library(patchwork)
 library(kableExtra)
 library(xtable)
+library(sendmailR)
 #========================================================================
 # Define functions
 #========================================================================
@@ -199,12 +198,15 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
 #========================================================================
 #========================================================================
 fx_vec <- c("eur_gbp", "eur_usd", "aud_usd", "usd_jpy", "aud_jpy", "eur_jpy")
-stock_vec <- c("ES=F", "EXS1.DE", "GC=F", "NG=F")
+stock_vec <- c("ES=F", "GC=F", "NG=F")
+fx_emaPer_vec <- rep(34, length(fx_vec))
+stock_emaPer_vec <- rep(55, length(stock_vec))
+emaPer_vec <- c(fx_emaPer_vec, stock_emaPer_vec)
 check_these <- c(fx_vec, stock_vec)
 #check_these <- c("eur_gbp", "eur_usd", "aud_usd", "usd_jpy")
-sse_thresh <- 20
+sse_thresh <- 60
 change_sd_thresh <- 1
-quick_movement_thresh <- 30
+quick_movement_thresh <- 60
 #========================================================================
 #------------------------------------------------------
 time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
@@ -213,7 +215,6 @@ power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
 max_length <- 5000 # max length of time series
-per_ema_for_detrend <- 34
 backtest_fraction <- 1 / 5
 lookAhead_fraction <- 1 / 6
 lookBack_fraction <- lookAhead_fraction * 0.5
@@ -230,8 +231,13 @@ upperPeriod <- 2^10 #floor(nrow(df_wave)/3)*dt, #2^7
 #========================================================================
 alert_vec <- c(); i_alert <- 0
 for(i in 1:length(check_these)){
+  #---------------------------------------------------------------------
+  # AlphaVantage allows only 5 queries per minute.
+  # So, have to wait a minute after every 5 queries.
+  if(i > 1 & (i - 1) %% 5 == 0){print("waiting a minute..."); Sys.sleep(61)}
+  #---------------------------------------------------------------------
   check_this <- check_these[i]
-  if(grep("_", check_this)){
+  if(length(grep("_", check_this)) != 0){
     fx_pair <- strsplit(check_this, "_")[[1]]
     symb_currency_from <- fx_pair[1]
     symb_currency_to <- fx_pair[2]
@@ -242,6 +248,8 @@ for(i in 1:length(check_these)){
   
   
 # Set parameters
+  this_emaPer <- emaPer_vec[i]
+per_ema_for_detrend <- this_emaPer
 # If doing forex, then stock_symbol and crypto_symbol have to = NULL
 #------------------------------------------------------
 # symb_currency_from <- "eur"#"eur"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
@@ -579,10 +587,11 @@ summod <- out_fitWave[[3]]
 #plot_validation(yhat_validate, ypredict_validate, df_wave)
 # Get sse in units of standard deviations
 n <- nrow(ypredict_validate)
-y_actual <- df_wave$dt[(nrow(df_wave) - n + 1):nrow(df_wave)]
+y_dt <- df_wave$dt[(nrow(df_wave) - n + 1):nrow(df_wave)]
+y_dt_ema <- EMA(y_dt, per_ema_for_detrend)
 sd_dt <- sd(df_wave$dt)
-#mse <- mean((ypredict_validate[, 1] / sd_dt - y_actual / sd_dt)^2)
-sse <- sum((ypredict_validate[, 1] / sd_dt - y_actual / sd_dt)^2)
+#mse <- mean((ypredict_validate[, 1] / sd_dt - y_dt / sd_dt)^2)
+sse <- sum((ypredict_validate[, 1] / sd_dt - y_dt_ema / sd_dt)^2, na.rm = T)
 #==========================================================================
 
 # n_lookAhead_zoom <- n_lookAhead
@@ -604,16 +613,18 @@ if(length(ind_peaks) != 0 & length(ind_valleys) != 0){
   if(time_to_peak < time_to_valley){
     time_to_critPoint <- time_to_peak
     change <- (y_mod[ind_peaks[1]] - y_mod[ind_valleys[1]]) / sd_dt
+    change <- round(change, 2)
     change_time <- ind_valleys[1] - ind_peaks[1]
   }else{
     time_to_critPoint <- time_to_valley
     change <- -(y_mod[ind_valleys[1]] - y_mod[ind_peaks[1]]) / sd_dt
+    change <- round(change, 2)
     change_time <- ind_peaks[1] - ind_valleys[1]
   }
   
 }else{
-  change <- NULL
-  change_time <- NULL
+  change <- NA
+  change_time <- NA
 }
 #==========================================================================
 if(!is.null(stock_symbol)){
@@ -627,12 +638,13 @@ if(!is.null(stock_symbol)){
 }
 print(time_step)
 print(symbol_domain)
+print(paste("EMA detrend period:", per_ema_for_detrend))
 print(paste("sse:", round(sse, 2)))
 print(paste("projected change (in stand devs):", change))
 print(paste("projected duration of change (time steps):", change_time))
 #--------------------------------------------------------------------------
 accurate_model <- ifelse(sse < sse_thresh, T, F)
-if(is.null(change)){
+if(is.na(change)){
   substantial_movement <- F
   quick_movement <- F
 }else{
@@ -652,13 +664,16 @@ if(send_alert){
 #==========================================================================
 #==========================================================================
 #==========================================================================
+#==========================================================================
+#==========================================================================
+#==========================================================================
 if(length(alert_vec) != 0){
   from <- "<ben.schiek@gmail.com>"
   to <- "<ben.schiek@gmail.com>"
-  subject <- "Market alert"
+  subject <- alert_vec
   body <- alert_vec
   mailControl <- list(smtpServer = "ASPMX.L.GOOGLE.COM")
-  sendmailR::sendmail(from = from, to = to, subject = subject,
+  sendmail(from = from, to = to, subject = subject,
                       body = body, control = mailControl)
   
 }
