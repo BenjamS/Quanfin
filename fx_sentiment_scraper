@@ -1,0 +1,62 @@
+library(rvest)
+library(tidyverse)
+
+#============================================================================
+# Define functions
+# Worldometer SARs-Cov2 data scraper
+url <- "https://fxssi.com/"
+site <- read_html(url)
+
+keep_these <- c("AUDUSD", "EURUSD", "GBPUSD", "USDCAD", "USDCHF", "USDJPY")  
+
+fxssi_symbols <- site %>%
+    html_nodes(".symbol") %>%
+    html_text()
+fxssi_symbols <- fxssi_symbols[which(!duplicated(fxssi_symbols))]
+ind_keep <- which(fxssi_symbols %in% keep_these)
+fxssi_symbols <- fxssi_symbols[ind_keep]
+
+fxssi_openLong <- site %>%
+    html_nodes(".ratio-bar-left") %>%
+    html_text()
+
+fxssi_openLong <- fxssi_openLong[-length(fxssi_openLong)]
+fxssi_openLong <- fxssi_openLong[ind_keep]
+fxssi_openLong <- gsub("%\n", "", fxssi_openLong, fixed = T)
+fxssi_openLong <- gsub(" ", "", fxssi_openLong, fixed = T)
+fxssi_openLong <- as.numeric(fxssi_openLong)
+names(fxssi_openLong) <- fxssi_symbols
+  
+
+
+
+# library(magick)
+# 
+# im <- image_read("Clipboard01.png")
+# im_proc <- im %>%
+#   image_channel("saturation")
+# #im_proc
+# im_proc2 <- im_proc %>%
+#   image_threshold("white", "30%")
+# #im_proc2
+# im_proc3 <- im_proc2 %>%
+#   image_negate()
+# im_proc3
+# 
+# 
+# dat <- image_data(im_proc)[1,,] %>%
+#   as.data.frame() %>%
+#   mutate(Row = 1:nrow(.)) %>%
+#   select(Row, everything()) %>%
+#   mutate_all(as.character) %>%
+#   gather(key = Column, value = value, 2:ncol(.)) %>%
+#   mutate(Column = as.numeric(gsub("V", "", Column)),
+#          Row = as.numeric(Row),
+#          value = ifelse(value == "00", NA, 1)) %>%
+#   filter(!is.na(value))
+# 
+# ggplot(data = dat, aes(x = Row, y = Column, colour = (Column < 300))) +
+#   geom_point() +
+#   scale_y_continuous(trans = "reverse") +
+#   scale_colour_manual(values = c("red4", "blue4")) +
+#   theme(legend.position = "off")
