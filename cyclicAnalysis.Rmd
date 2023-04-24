@@ -294,22 +294,22 @@ pctileFun <- function(x){
 # Good setting for pctlOsc: weekly, rollWind=89
 #chf/usd, cad/usd, weekly, rollWind=89
 #------------------------------------------------------
-symb_currency_from <- "usd"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
-symb_currency_to <- "chf"
+symb_currency_from <- "gbp"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
+symb_currency_to <- "jpy"
 # OR stocks
-stock_symbol <- NULL#"DBO RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
+stock_symbol <- NULL#"GLD" #"GAZ" #"WTI" #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
 #"ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F", "SB=F", "ZB=F", "ZN=F", "ZF=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "weekly" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
 #starting_how_many_steps_ago <- 370
-max_length <- 2000 # max length of time series
-rollWind <- 89
+max_length <- 1000 # max length of time series
+rollWind <- 144
 per_ema_for_detrend <- rollWind
 backtest_fraction <- 1 / 9
 lookAhead_fraction <- 1 / 9
@@ -356,6 +356,7 @@ if(is.null(stock_symbol)){
 print(symbol_domain)
 
 av_api_key("HQBAWJK4Y3YW81VG")
+tiingo_api_key("36ed3f9ac9c2ba969b80c8389bc9a1e1fcdfcc42")
 if(symbol_domain == "forex"){
   #--------------------------------------------------
   # If forex
@@ -370,7 +371,6 @@ if(symbol_domain == "forex"){
     # tbl_ohlcv <- tq_get("", get = "alphavantager", av_fun = "FX_INTRADAY", interval = time_step, from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full")
     #df_ohlcv <- as.data.frame(tbl_ohlcv)
     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-    
   }
   if(time_step_unit == "daily"){
     # If daily
@@ -390,10 +390,18 @@ if(symbol_domain == "stocks"){
   #--------------------------------------------------
   if(time_step_unit == "min"){
     # If intraday
-    tbl_ohlcv <- stock_symbol %>%
-      tq_get(get = "alphavantager", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") 
-    df_ohlcv <- as.data.frame(tbl_ohlcv)
+    # df_ohlcv <- stock_symbol %>%
+    #   tq_get(get = "alphavantage", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") %>% as.data.frame()
+    # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+    
+    time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+    fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
+    df_ohlcv <- stock_symbol %>% tq_get(get = "tiingo.iex",
+       from   = fromdate,
+       resample_frequency = time_step) %>% as.data.frame()
     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+
+
   }
   if(time_step_unit == "daily"){
     # If daily
@@ -410,7 +418,7 @@ if(symbol_domain == "stocks"){
     fromdate <- Sys.Date() - max_length * 5
     df_ohlcv <- stock_symbol %>% tq_get(get = "stock.prices",
                                         from = fromdate,
-                                        periodicity = time_step) %>% as.data.frame()
+                                        periodicity = time_step_unit) %>% as.data.frame()
     df_ohlcv$p <- df_ohlcv$adjusted
 
     # df_ohlcv <- stock_symbol %>%
