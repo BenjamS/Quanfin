@@ -293,8 +293,19 @@ pctileFun <- function(x){
 #------------------------------------------------------
 # Good setting for pctlOsc: weekly, rollWind=89
 #chf/usd, cad/usd, weekly, rollWind=89
+#usd/chf 15min maxlength=4000 rollWind=144
+#SPY 1min maxlength4000 rollwind 233
+#SPY 15min maxlength2000 rollwind 233
+#eur/jpy gbp/jpy 15min maxlength2000 rollwind 233
+#eur/usd maxlength2000 5min rollwind233 perfect fit
+#usd/cad maxlength3000 60min rollwind144 perfect
+#eur/gbp maxlength3000 5min rollwind377
+#GLD maxlength3-4000 5min rollwind233 GAZ too but less so
+#aud/usd aud/jpy maxlength3000 60or30min rollwind144or233
+#aud/jpy maxlength3000 5min rollwind233
+#usd/jpy maxlength2000 15min rollwind233
 #------------------------------------------------------
-symb_currency_from <- "gbp"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
+symb_currency_from <- "usd"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
 symb_currency_to <- "jpy"
 # OR stocks
 stock_symbol <- NULL#"GLD" #"GAZ" #"WTI" #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
@@ -303,13 +314,12 @@ stock_symbol <- NULL#"GLD" #"GAZ" #"WTI" #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
-#starting_how_many_steps_ago <- 370
-max_length <- 1000 # max length of time series
-rollWind <- 144
+max_length <- 2000 # max length of time series
+rollWind <- 233
 per_ema_for_detrend <- rollWind
 backtest_fraction <- 1 / 9
 lookAhead_fraction <- 1 / 9
@@ -341,6 +351,7 @@ print(time_step)
 #tbl_ohlcv <- tq_get(currency_symbs, get = "stock.prices", from = fromdate)
 # df_ohlcv <- as.data.frame(tbl_ohlcv)
 time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
+time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
 
 if(is.null(stock_symbol)){
   if(is.null(symb_currency_from)){
@@ -394,7 +405,6 @@ if(symbol_domain == "stocks"){
     #   tq_get(get = "alphavantage", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") %>% as.data.frame()
     # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
     
-    time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
     fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
     df_ohlcv <- stock_symbol %>% tq_get(get = "tiingo.iex",
        from   = fromdate,
@@ -432,19 +442,34 @@ if(symbol_domain == "cryptocurrency"){
   # If cryptocurrency
   #--------------------------------------------------
   if(time_step_unit == "min"){
-    print("Intraday data not available for cryptocurrencies. Try daily or weekly.")
+    # print("Intraday data not available for cryptocurrencies. Try daily or weekly.")
+    fromdate <- Sys.Date() - max_length / (24 * (60 / time_step_num))
+    df_ohlcv <- paste0(crypto_symbol_from, crypto_symbol_to) %>%
+      tq_get(
+       get    = "tiingo.crypto",
+       from   = fromdate,
+       resample_frequency = time_step) %>% as.data.frame()
+    df_ohlcv$p <- (df_ohlcv$open + df_ohlcv$high + df_ohlcv$low) / 3
+    
   }
   # If daily
   if(time_step_unit == "daily"){
     tbl_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_DAILY", market = crypto_symbol_to)
     df_ohlcv <- as.data.frame(tbl_ohlcv)
-    df_ohlcv$p <- rowSums(df_ohlcv[, 2:4]) / 3
+    df_ohlcv$p <- rowSums(df_ohlcv[, 3:5]) / 3
   }
   if(time_step_unit == "weekly"){
     # If weekly
-    tbl_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_WEEKLY", market = crypto_symbol_to, outputsize = "full")
-    df_ohlcv <- as.data.frame(tbl_ohlcv)
-    df_ohlcv$p <- rowSums(df_ohlcv[, 2:4]) / 3
+    #   fromdate <- Sys.Date() - max_length * 5
+    #   df_ohlcv <- paste0(crypto_symbol_from, crypto_symbol_to) %>%
+    #   tq_get(
+    #    get    = "tiingo.crypto",
+    #    from   = fromdate,
+    #    resample_frequency = time_step) %>% as.data.frame()
+    # df_ohlcv$p <- (df_ohlcv$open + df_ohlcv$high + df_ohlcv$low) / 3
+
+    df_ohlcv <- crypto_symbol_from %>% tq_get(get = "alphavantager", av_fun = "DIGITAL_CURRENCY_WEEKLY", market = crypto_symbol_to, outputsize = "full") %>% as.data.frame()
+    df_ohlcv$p <- rowSums(df_ohlcv[, 3:5]) / 3
   }
   
 }
