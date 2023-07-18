@@ -293,36 +293,38 @@ pctileFun <- function(x){
 #------------------------------------------------------
 # Good setting for pctlOsc: weekly, rollWind=89
 #chf/usd, cad/usd, weekly, rollWind=89
-#usd/chf 15min maxlength=4000 rollWind=144
+#usd/chf 15,5min maxlength=4000 rollWind=144,110
 #SPY 1min maxlength4000 rollwind 233
 #SPY 15min maxlength2000 rollwind 233
-#eur/jpy gbp/jpy 15min maxlength2000 rollwind 233
-#eur/usd maxlength2000 5min rollwind233 perfect fit
+#SPY 30min maxlength3000 rollwind 300
+#eur/jpy gbp/jpy usd/jpy 15min maxlength2000 rollwind 110/233
+#eur/usd 5min rollwind233 perfect fit
 #usd/cad maxlength3000 60min rollwind144 perfect
 #eur/gbp maxlength3000 5min rollwind377
 #GLD maxlength3-4000 5min rollwind233 GAZ too but less so
-#aud/usd aud/jpy maxlength3000 60or30min rollwind144or233
+#aud/usd aud/jpy maxlength3000,4000 60or30min,5 rollwind144or233,110
 #aud/jpy maxlength3000 5min rollwind233
-#usd/jpy maxlength2000 15min rollwind233
+#EWJ 4000 60min 233
+#generally good: 4000, 5,60min 110
 #------------------------------------------------------
-symb_currency_from <- "usd"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
-symb_currency_to <- "jpy"
+symb_currency_from <- "eur"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
+symb_currency_to <- "usd"
 # OR stocks
-stock_symbol <- NULL#"GLD" #"GAZ" #"WTI" #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
+stock_symbol <- NULL#"SPY"#"GAZ" #"GAZ" #"WTI"#NBO #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
 #"ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F", "SB=F", "ZB=F", "ZN=F", "ZF=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "15min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
-max_length <- 2000 # max length of time series
-rollWind <- 233
+max_length <- 4000 # max length of time series
+rollWind <- 144
 per_ema_for_detrend <- rollWind
-backtest_fraction <- 1 / 9
-lookAhead_fraction <- 1 / 9
+backtest_fraction <- 1 / 8
+lookAhead_fraction <- 1 / 8
 lookBack_fraction <- lookAhead_fraction * 0.5
 #waveletComp params:
 lowerPeriod <- 2^2 #2 * slope, #2^1
