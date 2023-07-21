@@ -24,6 +24,7 @@ library(WaveletComp)
 library(patchwork)
 library(kableExtra)
 library(xtable)
+library(flextable)
 #========================================================================
 # Define functions
 #========================================================================
@@ -276,6 +277,38 @@ get_cycles <- function(waveAnalysis){
 pctileFun <- function(x){
   out <- ecdf(x)(x[length(x)])
   return(out)
+}
+#========================================================================
+# Black-Scholes European call option value equation
+OVfun <- function(X0, K, s, m, r, tau){
+  d2 <- (log(X0 / K) + (m - s^2 / 2) * tau) / (s * sqrt(tau))
+  N1 <- pnorm(d2 + s * sqrt(tau))
+  N2 <- pnorm(d2)
+  OV <- exp((m - r) * tau) * X0 * N1 - exp(-r * tau) * K * N2
+  dfOut <- data.frame(OV, N1, N2)
+  return(dfOut)
+}
+#========================================================================
+# Financial "derivative" (i.e. derived from the Black-Scholes PDE)
+# if \partial f / \partial t = 0
+# The "intrinsic" option value apart from any time value
+OVdt0 <- function(X0, K, s, m, r, tau){
+  u <- 1 - 2 * m / s^2
+  # Let g = moneyness (x(0) / K)
+  gStar <- (1 / (1 - u))^(1 / u)
+  Kstar <- gStar * X0
+  OV <- exp(-r * tau) * K^(1 - u) / (2 * u) * (X0^u - K^u)
+  dfOut <- data.frame(OV, mnyStar = gStar, Kstar)
+  return(dfOut)
+}
+#========================================================================
+# The derivative envelope, i.e. the derivative for which the action is stationary
+OVstar <- function(X0, K, s, m, r, tau){
+  d2 <- (log(X0 / K) + (m - s^2 / 2) * tau) / (s * sqrt(tau))
+  OVstar <- K * (exp(-(m + s^2 / 2) * tau) / 2 - exp(-r * tau) * pnorm(d2))
+  deltaStar <- K / (2 * X0) * exp(-(m + s^2 / 2) * tau)
+  dfOut <- data.frame(OVstar, deltaStar)
+  return(dfOut)
 }
 #========================================================================
 #========================================================================
@@ -644,10 +677,115 @@ gg <- gg + theme(legend.title = element_blank(),
                  axis.text.x = element_blank())
 gg_raw <- gg
 #------------------------------------------------------------
-gg_raw / gg_dt / gg_pctlOsc / plot_layout(ncol = 1, heights = c(1, 1/2, 1/2))
+gg_raw / gg_dt / gg_pctlOsc / plot_layout(ncol = 1, heights = c(1, 1/2, 1/2, 1/4))
 #------------------------------------------------------------
 
 ```
+
+```{r, fig.show = 'hold', fig.align='center', fig.cap="\\label{fig:basic}(Top) Basic plot of time series with a moving average, and (bottom) the ts detrended.", fig.height=4, fig.width=7, echo=FALSE}
+
+#-----------------------------------------------------------------------
+# Calculate option value, intrinsic value, optimal strike, moneyness, etc.
+#-----------------------------------------------------------------------
+# Compute tSteps left until the end of the week
+# Also get the appropriate discount rate for the tStep
+# Continuous tStep discount rate is computed from an assumed discrete annual discount rate of 0.05
+rYrly_discrete <- 0.05
+timeNow <- Sys.time()
+d0 <- 6 - wday(timeNow) # Days left in the trading week
+h0 <- 24 - hour(timeNow) # Hours left in the day
+m0 <- 60 - minute(timeNow) # Minutes left in the hour
+hrsUntilMaturity <- 24 * d0 + h0 + m0 / 60
+if(time_step_unit == "min"){
+  tStepsUntilMat <- hrsUntilMaturity * 60 / time_step_num
+  rTstep_discrete <- (1 + rYrly_discrete)^(1 / (365 * 24 * 60 / time_step_num)) - 1
+  rTstep_cont <- log(1 + rTstep_discrete)
+}
+#------------
+#hrsPast...
+#------------------------------------------------------------------------
+# Parameterize
+tau <- tStepsUntilMat
+# Get log tStep returns
+df$`Log change` <- c(NA, diff(log(df$p)))
+lRet <- df$`Log change`[-1]
+# Compute s, m
+s <- sd(lRet, na.rm = T) / sqrt(tau)
+m <- mean(lRet, na.rm = T) / tau + s^2 / 2
+cv <- s / (m * sqrt(tau))
+r <- rTstep_cont
+XoK <- seq(0.5, 1.5, length.out = 50) # X(0)/K - Moneyness
+X0 <- df$p[nrow(df)]
+K <- X0 / XoK
+# European call option value, delta, prob of expiring in the money
+dfOut <- OVfun(X0, K, s, m, r, tau)
+OV <- dfOut[, 1]
+delta <- dfOut[, 2] #N1
+probExpInMon <- dfOut[, 3] #N2
+# Intrinsic value over moneyness, apart from time value
+dfOut <- OVdt0(X0, K, s, m, r, tau)
+IntrinOV <- dfOut[, 1]
+mnyStar <- dfOut[, 2] # moneyness maximizing IntrinOV
+Kstar <- dfOut[, 3]
+# Forward contract price
+FV <- exp(m * tau) * X0 - exp(-r * tau) * K
+# # Derivative envelope (at which the action is stationary; extremal (max or min))
+# dfOut <- OVstar(X0, K, s, m, r, tau)
+# OVstar <- dfOut[, 1]
+# deltaStar <- dfOut[, 2]
+#------------------------------------------------------------------------
+# Graph
+dfPlot <- data.frame(OV, IntrinOV, FV, XoK) %>% gather(Type, Val, OV:FV)
+gg <- ggplot(dfPlot, aes(x = XoK, y = Val, group = Type, color = Type))
+gg <- gg + geom_line()
+gg <- gg + coord_cartesian(xlim = c(0.9, 1.1), ylim = c(-.05, 0.05))
+gg <- gg + geom_hline(yintercept = 0, color = "red", linetype = "dashed")
+gg <- gg + geom_vline(xintercept = 1, color = "red", linetype = "dashed")
+gg <- gg + labs(x = "Moneyness")
+gg <- gg + theme_bw()
+gg <- gg + theme(legend.position = "top",
+                 legend.title = element_blank())
+gg_OV <- gg
+#--------------------------------------------------------------------
+# Histogram of log returns per time step
+gg <- ggplot(df, aes(x = `Log change`))
+gg <- gg + geom_histogram(color = 4, fill = "white", bins = 20)
+#gg <- gg + facet_wrap(~var, ncol = 1, scales = "free")
+#gg <- gg + labs(title = "Daily log change")
+gg <- gg + theme_bw()
+gg <- gg + theme(#axis.title = element_blank(),
+                 axis.title.y = element_blank(),
+                 #axis.title.x = element_text(size = axisTitleSize),
+                 #axis.text = element_text(size = axisTextSize),
+                 strip.background = element_rect(fill = "white"),
+                 strip.text = element_blank()#,
+                 #plot.title = element_text(size = titleSize)
+                 )
+gg_hist <- gg
+#--------------------------------------------------------------------
+gg_hist + gg_OV + plot_layout(ncol = 2, widths = c(1 / 2, 1))
+#--------------------------------------------------------------------
+mnyStar <- round(unique(mnyStar), 5)
+Kstar <- round(unique(Kstar), 5)
+spot <- round(X0, 5)
+mnyCurnt <- round(spot / Kstar, 4)
+deltaStar <- round(mnyStar / 2 * exp(-(m + s^2 / 2) * tau), 4)
+d2 <- (log(mnyStar) + (m - s^2 / 2) * tau) / (s * sqrt(tau))
+probITMstar <- round(pnorm(d2), 4)
+d2 <- (log(mnyCurnt) + (m - s^2 / 2) * tau) / (s * sqrt(tau))
+probITMcurnt <- round(pnorm(d2), 4)
+
+dfTab <- data.frame(c("Time steps to maturity", "Time step", "Mean log return", "cv log return", "Optimal moneyness", "Optimal Strike", "Spot price", "Current moneyness\nw.r.t optimal strike", "Optimal delta", "Optimal prob ITM", "Current prob ITM\nw.r.t. optimal strike"),
+                    c(round(tau, 2), time_step, round(m, 6), round(cv, 4),
+                      mnyStar, Kstar, spot, mnyCurnt, deltaStar,
+                      probITMstar, probITMcurnt))
+colnames(dfTab) <- c("param", "value")
+dfTab %>% regulartable() %>% autofit()
+
+
+```
+
+
 
 ```{r, echo=FALSE, include=FALSE}
 #------------------------------------------------------------

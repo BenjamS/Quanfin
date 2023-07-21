@@ -4,8 +4,6 @@ library(tidyquant)
 library(patchwork)
 library(lubridate)
 #=============================================================================
-av_api_key("HQBAWJK4Y3YW81VG")
-#=============================================================================
 # Define functions
 get_S_and_corrXS <- function(mat_X_in){
   # mat_P = eigenvectors of the data correlation matrix
@@ -198,42 +196,130 @@ pctileFun <- function(x){
 #=============================================================================
 #=============================================================================
 #=============================================================================
-fx_vec1 <- c("eur/gbp", "eur/usd",
-            "aud/usd", "usd/jpy",
-            "aud/jpy")
-fx_vec2 <- c("eur/jpy", "usd/cad", "usd/chf")
-stock_vec <- c("ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F",
-               "SB=F", "ZB=F", "ZN=F", "ZF=F", "XLF", "XLI", "XLK",
-               "IYR", "XLV", "XLY", "XLP")
-fromdate <- "2011-01-01"
+fx_vec1 <- c("eurgbp", "eurusd",
+            "audusd", "usdjpy",
+            "audjpy")
+fx_vec2 <- c("eurjpy", "usdcad", "usdchf")
+stock_vec <- NULL
+# stock_vec <- c("XLF", "XLI", "XLK",
+#                "IYR", "XLV", "XLY", "XLP")
+# stock_vec <- c("ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F",
+#                "SB=F", "ZB=F", "ZN=F", "ZF=F", "XLF", "XLI", "XLK",
+#                "IYR", "XLV", "XLY", "XLP")
+#fromdate <- "2011-01-01"
+max_length <- 2000
 #-----------------------------------------------------------------------------
 # fx_emaPer_vec <- rep(34, length(fx_vec))
 # stock_emaPer_vec <- rep(55, length(stock_vec))
 # emaPer_vec <- c(fx_emaPer_vec, stock_emaPer_vec)
 #-----------------------------------------------------------------------------
-time_step <- "weekly" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #=============================================================================
-df_ohlcv <- stock_vec %>% 
-  tq_get(get = "stock.prices",
-         from = fromdate, periodicity = time_step) %>%
-  as.data.frame()
-df_ohlcv$p <- df_ohlcv$adjusted
-df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
+time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
+time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+#=============================================================================
+av_api_key("HQBAWJK4Y3YW81VG")
+tiingo_api_key("36ed3f9ac9c2ba969b80c8389bc9a1e1fcdfcc42")
+#=============================================================================
+# Stocks
+# df_ohlcv <- stock_vec %>% 
+#   tq_get(get = "stock.prices",
+#          from = fromdate, periodicity = time_step) %>%
+#   as.data.frame()
+# df_ohlcv$p <- df_ohlcv$adjusted
+# df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+# dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
+if(!is.null(stock_vec)){
+  if(time_step_unit == "min"){
+  # If intraday
+  # df_ohlcv <- stock_symbol %>%
+  #   tq_get(get = "alphavantage", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") %>% as.data.frame()
+  # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  
+  fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
+  df_ohlcv <- stock_vec[1] %>% tq_get(get = "tiingo.iex",
+                                      from   = fromdate,
+                                      resample_frequency = time_step) %>% as.data.frame()
+  df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  
+  
+}
+if(time_step_unit == "daily"){
+  # If daily
+  fromdate <- Sys.Date() - max_length
+  df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
+                                      from = fromdate) %>% as.data.frame()
+  df_ohlcv$p <- df_ohlcv$adjusted
+  # df_ohlcv <- stock_symbol %>%
+  #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_DAILY_ADJUSTED", outputsize = "full") %>% as.data.frame(tbl_ohlcv)
+  # df_ohlcv$p <- df_ohlcv$adjusted_close
+}
+if(time_step_unit == "weekly"){
+  # If weekly
+  fromdate <- Sys.Date() - max_length * 5
+  df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
+                                      from = fromdate,
+                                      periodicity = time_step_unit) %>% as.data.frame()
+  df_ohlcv$p <- df_ohlcv$adjusted
+  
+  # df_ohlcv <- stock_symbol %>%
+  #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_WEEKLY_ADJUSTED", outputsize = "full") %>% as.data.frame()
+  # df_ohlcv$p <- df_ohlcv$adjusted_close
+}
+}
+# Forex
 # AlphaVantage allows only 5 queries per minute.
 # So split queries into two batches with minute wait in between.
-df_ohlcv1 <- fx_vec1 %>%  tq_get(get = "alphavantager",
-                               av_fun = "FX_WEEKLY",
-                               outputsize = "full") %>% as.data.frame()
-Sys.sleep(61)
-df_ohlcv2 <- fx_vec2 %>%  tq_get(get = "alphavantager",
-                               av_fun = "FX_WEEKLY",
-                               outputsize = "full") %>% as.data.frame()
-df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
-df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-colnames(df_ohlcv)[2] <- "date"
-dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+if(!is.null(fx_vec1)){
+  
+# df_ohlcv1 <- fx_vec1 %>%  tq_get(get = "alphavantager",
+#                                av_fun = "FX_WEEKLY",
+#                                outputsize = "full") %>% as.data.frame()
+# Sys.sleep(61)
+# df_ohlcv2 <- fx_vec2 %>%  tq_get(get = "alphavantager",
+#                                av_fun = "FX_WEEKLY",
+#                                outputsize = "full") %>% as.data.frame()
+# df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+# df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+# df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+# colnames(df_ohlcv)[2] <- "date"
+# dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+  if(time_step_unit == "min"){
+    # If intraday
+    df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantage",
+                       av_fun     = "TIME_SERIES_INTRADAY",
+                       interval   = time_step,
+                       outputsize = "full") %>% as.data.frame()
+    Sys.sleep(61)
+    df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantage",
+                                    av_fun     = "TIME_SERIES_INTRADAY",
+                                    interval   = time_step,
+                                    outputsize = "full") %>% as.data.frame()
+    df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+    df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+    colnames(df_ohlcv)[2] <- "date"
+    dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+  }
+  if(time_step_unit == "daily"){
+    # If daily
+    df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
+    df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
+    df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+    df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+    colnames(df_ohlcv)[2] <- "date"
+    dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+  }
+  if(time_step_unit == "weekly"){
+    # If weekly
+    df_ohlcv <- fx_vec1 %>% tq_get("", get = "alphavantager", av_fun = "FX_WEEKLY", from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full") %>% as.data.frame()
+    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+  }
+  df_ohlcv$symbol <- NULL
+}
+
+
 #-----------------------------------------------------------------------------
 o <- apply(dfFx, 2, function(x) length(which(is.na(x))))
 #table(o)
@@ -342,38 +428,38 @@ plot_corrXS_barchart(mat_Lrot, group_info = NULL, xAxis_title, sigNames = NULL)
 
 
 
-# Read in the Commitment of Traders (CoT) data
-# Financials CoT data
-this_folder <- "D:/OneDrive - CGIAR/Documents 1/CIAT 2/finAnalysis/data/"
-this_filename <- "Finance CoT_processed.csv"
-this_filepath <- paste0(this_folder, this_filename)
-df_finCoT <- read.csv(this_filepath, stringsAsFactors = F)
-# Commodities CoT data
-this_filename <- "Commodity CoT_processed.csv"
-this_filepath <- paste0(this_folder, this_filename)
-df_comCoT <- read.csv(this_filepath, stringsAsFactors = F)
-#-----------------------------------------------------------------------------
-# Get rolling percentile series
-# Set rolling percentile window size for weekly CoT data
-rollWind_CoT <- 52
-#---
-df_pctlFinCoT <- subset(df_finCoT, Element == "Smart money net position (% of OI)")
-df_pctlFinCoT$Element <- NULL
-df_pctlFinCoT <- df_pctlFinCoT %>% group_by(Item) %>%
-  mutate(Value = rollapply(Value, rollWind_CoT, pctileFun, fill = NA, align = "right")) %>%
-  as.data.frame()
-df_pctlComCoT <- subset(df_comCoT, Element == "Smart money net position (% of OI)")
-df_pctlComCoT$Element <- NULL
-df_pctlComCoT <- df_pctlComCoT %>% group_by(Item) %>%
-  mutate(Value = rollapply(Value, rollWind_CoT, pctileFun, fill = NA, align = "right")) %>%
-  as.data.frame()
-#-----------------------------------------------------------------------------
-df_in <- df_pctlComCoT
-df_in <- df_in[-which(is.na(df_in$Value)), ]
-out_list <- getSeasons(df_in,
-                       freq = 52,
-                       mod_type = "additive",
-                       show_graphs = T)
-df_s <- out_list[[1]]
-ratio1 <- out_list[[2]]
-ratio2 <- out_list[[3]]
+# # Read in the Commitment of Traders (CoT) data
+# # Financials CoT data
+# this_folder <- "D:/OneDrive - CGIAR/Documents 1/CIAT 2/finAnalysis/data/"
+# this_filename <- "Finance CoT_processed.csv"
+# this_filepath <- paste0(this_folder, this_filename)
+# df_finCoT <- read.csv(this_filepath, stringsAsFactors = F)
+# # Commodities CoT data
+# this_filename <- "Commodity CoT_processed.csv"
+# this_filepath <- paste0(this_folder, this_filename)
+# df_comCoT <- read.csv(this_filepath, stringsAsFactors = F)
+# #-----------------------------------------------------------------------------
+# # Get rolling percentile series
+# # Set rolling percentile window size for weekly CoT data
+# rollWind_CoT <- 52
+# #---
+# df_pctlFinCoT <- subset(df_finCoT, Element == "Smart money net position (% of OI)")
+# df_pctlFinCoT$Element <- NULL
+# df_pctlFinCoT <- df_pctlFinCoT %>% group_by(Item) %>%
+#   mutate(Value = rollapply(Value, rollWind_CoT, pctileFun, fill = NA, align = "right")) %>%
+#   as.data.frame()
+# df_pctlComCoT <- subset(df_comCoT, Element == "Smart money net position (% of OI)")
+# df_pctlComCoT$Element <- NULL
+# df_pctlComCoT <- df_pctlComCoT %>% group_by(Item) %>%
+#   mutate(Value = rollapply(Value, rollWind_CoT, pctileFun, fill = NA, align = "right")) %>%
+#   as.data.frame()
+# #-----------------------------------------------------------------------------
+# df_in <- df_pctlComCoT
+# df_in <- df_in[-which(is.na(df_in$Value)), ]
+# out_list <- getSeasons(df_in,
+#                        freq = 52,
+#                        mod_type = "additive",
+#                        show_graphs = T)
+# df_s <- out_list[[1]]
+# ratio1 <- out_list[[2]]
+# ratio2 <- out_list[[3]]
