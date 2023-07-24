@@ -340,21 +340,21 @@ OVstar <- function(X0, K, s, m, r, tau){
 #EWJ 4000 60min 233
 #generally good: 4000, 5,60min 110
 #------------------------------------------------------
-symb_currency_from <- "eur"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
-symb_currency_to <- "usd"
+symb_currency_from <- "gbp"#"chf"#"aud"#"gbp"#"eur"#"aud"#"gbp"#"aud"
+symb_currency_to <- NULL#"jpy"
 # OR stocks
-stock_symbol <- NULL#"SPY"#"GAZ" #"GAZ" #"WTI"#NBO #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
+stock_symbol <- "SPY"#"GAZ" #"GAZ" #"WTI"#NBO #"RTY=F"#"NK=F"#"NG=F"#"FXI"#"SI=F"#"GC=F"#"NG=F"#"CL=F"#"EXS1.DE"#ZC=F#"HG=F" BNO CPER XLF "XLI", "XLK", "IYR", "XLV", "XLY", "XLP"
 #"ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F", "SB=F", "ZB=F", "ZN=F", "ZF=F"
 # OR crypto -- daily, weekly (from alpha advantage); or minute, hour from cryptocompare
 crypto_symbol_from <- NULL#"ETH" #"BNB"#"BTC"
 crypto_symbol_to <- "USD"#"ETH" #"BNB"#"BTC"
 #------------------------------------------------------
-time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
+time_step <- "30min" #1min, 5min, 15min, 30min, 60min, daily, weekly
 #------------------------------------------------------
 power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #------------------------------------------------------
 max_length <- 4000 # max length of time series
-rollWind <- 144
+rollWind <- 350
 per_ema_for_detrend <- rollWind
 backtest_fraction <- 1 / 8
 lookAhead_fraction <- 1 / 8
