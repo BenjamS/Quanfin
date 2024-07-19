@@ -3,6 +3,7 @@ library(tidyverse)
 library(tidyquant)
 library(patchwork)
 library(lubridate)
+library(scales)
 #=============================================================================
 # Define functions
 get_S_and_corrXS <- function(mat_X_in){
@@ -21,6 +22,7 @@ get_S_and_corrXS <- function(mat_X_in){
   mat_P <- eigen(cov(mat_X_in))$vectors
   if(mean(mat_P[, 1]) < 0){mat_P <- -mat_P}
   eig_values <- eigen(cov(mat_X_in))$values
+  eig_values[which(eig_values < 0)] <- 0
   mat_G <- diag(eig_values)
   
   #mat_P_sigs <- mat_P[, 1:n_signals]
@@ -118,22 +120,61 @@ plot_corrXS_barchart <- function(mat_L, group_info = NULL, xAxis_title = NULL, s
                            levels = rev(unique(df_plot$Item)))
     gg <- ggplot(df_plot, aes(x = Item, y = Correlation))
   }
-  gg <- gg + geom_bar(stat = "identity", color = "black", position = "dodge")
+  gg <- gg + geom_hline(yintercept = 0, color = "black")
+  gg <- gg + geom_hline(yintercept = c(0.5, -0.5), color = "red")
+  gg <- gg + geom_bar(stat = "identity", position = "dodge")
   gg <- gg + ylim(limits = c(-1, 1))
-  gg <- gg + facet_wrap(~ Signal, nrow = 1)
-  if(!is.null(xAxis_title)){
-    gg <- gg + labs(y = xAxis_title)
-  }
-  gg <- gg + theme(axis.text = element_text(size = 7),
-                   axis.title.x = element_text(size = 7),
-                   axis.title.y = element_blank(),
+  gg <- gg + facet_wrap(~Signal, ncol = 1, strip.position = "right")
+  # if(!is.null(xAxis_title)){
+  #   gg <- gg + labs(x = xAxis_title)
+  # }
+  gg <- gg + theme_classic()
+  gg <- gg + theme(axis.text.y = element_text(size = 7),
+                   axis.text.x = element_text(size = 7, angle = 60, hjust = 1),
+                   axis.title = element_blank(),
                    legend.title = element_blank(),
                    legend.text = element_text(size = 7),
+                   legend.key.size = unit(0.3, "cm"),
+                   legend.position = "top",
+                   panel.background = element_blank(),
                    strip.text = element_text(size = 7))
-  gg <- gg + coord_equal()
-  gg <- gg + coord_flip()
+  gg <- gg + guides(fill = guide_legend(nrow = 2, byrow = T))
+  #gg <- gg + coord_equal()
+  #gg <- gg + coord_flip()
   gg
   
+}
+#--------------------------------------------------------------
+# Define function to order data by group
+group_fn <- function(groupInfo){
+  listGroups <- groupInfo[[1]]
+  groupNames <- groupInfo[[2]]
+  groupColors <- groupInfo[[3]]
+  varNames_ordered <- do.call(c, listGroups)
+  n_groups <- length(groupNames)
+  n_items <- length(varNames_ordered)
+  if(is.null(groupColors)){
+    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
+    groupColors <- sample(bag_of_colors, n_groups)
+    #group_colors <- viridis::viridis_pal(option = "D")(length(group_names))
+  }
+  #if(reverse_order){group_colors <- rev(group_colors)}
+  #varNames_ordered <- colnames(mat_pctDiff)
+  group_vec <- rep(NA, n_items)
+  group_color_vec <- rep(NA, n_items)
+  for(i in 1:n_groups){
+    this_group_vec <- listGroups[[i]]
+    this_group_name <- groupNames[i]
+    this_group_color <- groupColors[i]
+    group_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_name
+    group_color_vec[which(varNames_ordered %in% this_group_vec)] <- this_group_color
+  }
+  ind_ordered_cols <- order(factor(group_vec))
+  cols_ordered_by_group <- as.character(varNames_ordered[ind_ordered_cols])
+  group_color_vec <- group_color_vec[ind_ordered_cols]
+  group_vec_ordered <- group_vec[ind_ordered_cols]
+  out_list <- list(cols_ordered_by_group, group_color_vec, group_vec_ordered, ind_ordered_cols, group_vec)
+  return(out_list)
 }
 #-----------------------------------------------------------------------------
 # For percentile oscillator
@@ -195,210 +236,203 @@ pctileFun <- function(x){
 # End function definition
 #=============================================================================
 #=============================================================================
-#=============================================================================
-fx_vec1 <- c("eurgbp", "eurusd",
-            "audusd", "usdjpy",
-            "audjpy")
-fx_vec2 <- c("eurjpy", "usdcad", "usdchf")
-stock_vec <- NULL
-# stock_vec <- c("XLF", "XLI", "XLK",
-#                "IYR", "XLV", "XLY", "XLP")
-# stock_vec <- c("ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F",
-#                "SB=F", "ZB=F", "ZN=F", "ZF=F", "XLF", "XLI", "XLK",
-#                "IYR", "XLV", "XLY", "XLP")
-#fromdate <- "2011-01-01"
-max_length <- 2000
-#-----------------------------------------------------------------------------
-# fx_emaPer_vec <- rep(34, length(fx_vec))
-# stock_emaPer_vec <- rep(55, length(stock_vec))
-# emaPer_vec <- c(fx_emaPer_vec, stock_emaPer_vec)
-#-----------------------------------------------------------------------------
-time_step <- "60min" #1min, 5min, 15min, 30min, 60min, daily, weekly
-#=============================================================================
-time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
-time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
-#=============================================================================
-av_api_key("HQBAWJK4Y3YW81VG")
-tiingo_api_key("36ed3f9ac9c2ba969b80c8389bc9a1e1fcdfcc42")
-#=============================================================================
-# Stocks
-# df_ohlcv <- stock_vec %>% 
-#   tq_get(get = "stock.prices",
-#          from = fromdate, periodicity = time_step) %>%
-#   as.data.frame()
-# df_ohlcv$p <- df_ohlcv$adjusted
-# df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-# dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
-if(!is.null(stock_vec)){
-  if(time_step_unit == "min"){
-  # If intraday
-  # df_ohlcv <- stock_symbol %>%
-  #   tq_get(get = "alphavantage", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") %>% as.data.frame()
-  # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-  
-  fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
-  df_ohlcv <- stock_vec[1] %>% tq_get(get = "tiingo.iex",
-                                      from   = fromdate,
-                                      resample_frequency = time_step) %>% as.data.frame()
-  df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-  
-  
-}
-if(time_step_unit == "daily"){
-  # If daily
-  fromdate <- Sys.Date() - max_length
-  df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
-                                      from = fromdate) %>% as.data.frame()
-  df_ohlcv$p <- df_ohlcv$adjusted
-  # df_ohlcv <- stock_symbol %>%
-  #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_DAILY_ADJUSTED", outputsize = "full") %>% as.data.frame(tbl_ohlcv)
-  # df_ohlcv$p <- df_ohlcv$adjusted_close
-}
-if(time_step_unit == "weekly"){
-  # If weekly
-  fromdate <- Sys.Date() - max_length * 5
-  df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
-                                      from = fromdate,
-                                      periodicity = time_step_unit) %>% as.data.frame()
-  df_ohlcv$p <- df_ohlcv$adjusted
-  
-  # df_ohlcv <- stock_symbol %>%
-  #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_WEEKLY_ADJUSTED", outputsize = "full") %>% as.data.frame()
-  # df_ohlcv$p <- df_ohlcv$adjusted_close
-}
-}
-# Forex
-# AlphaVantage allows only 5 queries per minute.
-# So split queries into two batches with minute wait in between.
-if(!is.null(fx_vec1)){
-  
-# df_ohlcv1 <- fx_vec1 %>%  tq_get(get = "alphavantager",
-#                                av_fun = "FX_WEEKLY",
-#                                outputsize = "full") %>% as.data.frame()
-# Sys.sleep(61)
-# df_ohlcv2 <- fx_vec2 %>%  tq_get(get = "alphavantager",
-#                                av_fun = "FX_WEEKLY",
-#                                outputsize = "full") %>% as.data.frame()
-# df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
-# df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-# df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-# colnames(df_ohlcv)[2] <- "date"
-# dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
-  if(time_step_unit == "min"){
-    # If intraday
-    df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantage",
-                       av_fun     = "TIME_SERIES_INTRADAY",
-                       interval   = time_step,
-                       outputsize = "full") %>% as.data.frame()
-    Sys.sleep(61)
-    df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantage",
-                                    av_fun     = "TIME_SERIES_INTRADAY",
-                                    interval   = time_step,
-                                    outputsize = "full") %>% as.data.frame()
-    df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
-    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-    df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-    colnames(df_ohlcv)[2] <- "date"
-    dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
-  }
-  if(time_step_unit == "daily"){
-    # If daily
-    df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
-    df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
-    df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
-    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-    df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-    colnames(df_ohlcv)[2] <- "date"
-    dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
-  }
-  if(time_step_unit == "weekly"){
-    # If weekly
-    df_ohlcv <- fx_vec1 %>% tq_get("", get = "alphavantager", av_fun = "FX_WEEKLY", from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full") %>% as.data.frame()
-    df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
-  }
-  df_ohlcv$symbol <- NULL
-}
+# Tiingo has good free stock screener with option to export to csv:
+# https://app.tiingo.com/screener/overview
+workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
+thisFile <-"largeCap.csv"
+thisFilepath <- paste0(workFolder, thisFile)
+dfThese <- read.csv(thisFilepath, stringsAsFactors = F) #Tiingo screener
+theseStks <- unique(dfThese$Ticker)
+unique(dfThese$Sector)
+dfAvailRaw <- riingo::supported_tickers() %>% as.data.frame()
+colnames(dfAvailRaw)[1] <- "Ticker"
+dfAvail <- dfAvailRaw %>% merge(dfThese)
+theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
+dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
+                              exchange %in% theseExchngs & 
+                              endDate == (Sys.Date() - 1))
 
-
-#-----------------------------------------------------------------------------
-o <- apply(dfFx, 2, function(x) length(which(is.na(x))))
-#table(o)
-ind_na <- which(is.na(df$p))
-if(length(ind_na) != 0){
-  df$p <- na.approx(df$p)
+#unique(dfAvailRaw$exchange)
+#theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
+# dfAvail <- dfAvailRaw %>% subset(exchange %in% theseExchngs &
+#                                    startDate < "2019-01-01" &
+#                                    endDate == (Sys.Date() - 1) &
+#                                    ticker %in% theseStks)
+allStks <- unique(dfAvail$Ticker)
+length(allStks)
+#allStks <- allStks[-which(allStks == "AHL-P-C")]
+fromdate <- Sys.Date() - round(length(allStks) * 1.35)
+stkVec <- allStks
+#=============================================================================
+# Sort out sector info, especially for graphing purposes
+dfAvail$Sector[grep("Materials", dfAvail$Sector)] <- "Materials"
+dfAvail$Sector[grep("Tech", dfAvail$Sector)] <- "Technology"
+dfAvail$Sector[grep("Unknown", dfAvail$Sector)] <- "Unknown"
+sctrVec <- unique(dfAvail$Sector)
+# list_groups <- list(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+#                     currency_detail, emerg_mkt_detail, Tbond_detail) #crypto_detail,
+# group_names <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currency Pairs",
+#                  "Emerging Markets", "T-Bonds") #"Cryptocurrencies/\nBlockchain"
+listGroups <- list()
+for(i in 1:length(sctrVec)){
+  listGroups[[sctrVec[i]]] <- dfAvail[, c("Ticker", "Sector")] %>%
+    subset(Sector == sctrVec[i]) %>%
+    .$Ticker
 }
-#-----------------------------------------------------------------------------
+groupNames <- sctrVec
+n_groups <- length(listGroups)
+#group_colors <- RColorBrewer::brewer.pal(n = n_groups, "Dark2")
+# "Darjeeling"
+# group_colors <- wesanderson::wes_palette("Darjeeling1", n = n_groups, type = "continuous")
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
+groupColors <- sample(bag_of_colors, n_groups)
+groupInfo <- list(listGroups, groupNames, groupColors)
+outlist <- group_fn(groupInfo)
+cols_ordered_by_group <- outlist[[1]]
+group_color_vec <- outlist[[2]]
+group_vec_ordered <- outlist[[3]]
+ind_ordered_cols <- outlist[[4]]
+df_match_group <- data.frame(Item = cols_ordered_by_group, Group = group_vec_ordered)
+#=============================================================================
+# Download price series
+df_ohlcv  <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
+length(unique(df_ohlcv$symbol))
+o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
+df_ohlcv$p <- df_ohlcv$adjusted
+# dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
+# o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
+df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+dfStk <- df_ohlcv[, c("symbol", "date", "p")]
+#dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
+#o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
+saveToFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
+fileName <- "largeCap.rds"
+saveFilePath <- paste0(saveToFolder, fileName)
+saveRDS(dfStk, saveFilePath)
+#=============================================================================
 # Get percentile oscillator series
-rollWind <- 34
+rollWind <- 89
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
+  mutate(pctlOsc = 2 * pctlOsc - 1) %>%
   as.data.frame()
-dfFx <- dfFx %>% group_by(symbol) %>%
-  mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
-  as.data.frame()
-#-----------------------------------------------------------------------------
-# Get p - ema oscillator
-dfStk <- dfStk %>% group_by(symbol) %>%
-  mutate(ema = EMA(p, per_ema_for_detrend)) %>%
-  mutate(difEMA = p - ema) %>%
-  as.data.frame()
-dfFx <- dfFx %>% group_by(symbol) %>%
-  mutate(ema = EMA(p, per_ema_for_detrend)) %>%
-  mutate(difEMA = p - ema) %>%
-  as.data.frame()
-#-----------------------------------------------------------------------------
-gg <- ggplot(dfFx, aes(x = date, y = pctlOsc))
+dfx <- dfStk[, c("symbol", "date", "pctlOsc")] %>% spread(symbol, pctlOsc)
+o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
+dfStk <- dfStk[-which(is.na(dfStk$pctlOsc)), c("symbol", "date", "pctlOsc")]
+o <- apply(dfStk, 2, function(x) length(which(is.na(x))));o
+#=============================================================================
+# df <- dfStk[, c("symbol", "date", "pctlOsc")]
+# o <- apply(df, 2, function(x) length(which(is.nan(x))));o
+df_pca <- dfStk %>% spread(symbol, pctlOsc)
+o <- apply(df_pca, 2, function(x) length(which(is.na(x))));o
+mat_X_in <- as.matrix(df_pca[, -1]) %>% scale()
+row.names(mat_X_in) <- df_pca$date
+o <- apply(mat_X_in, 2, function(x) length(which(is.na(x))));o
+out <- get_S_and_corrXS(mat_X_in)
+matS <- out[[1]]
+mat_L <- out[[2]]
+eigVals <- out[[3]]
+matP <- out[[4]]
+#matS <- mat_X_in %*% matP
+pctExplnd <- cumsum(eigVals) / sum(eigVals)
+cutOff1 <- which(pctExplnd >= 0.80)[1]
+cutOff2 <- which(colMeans(abs(mat_L)) > 0.15)
+cutOff <- min(max(cutOff1), max(cutOff2))
+pctExplndVec <- round(100 * eigVals[1:cutOff] / sum(eigVals), 2)
+mat_L <- mat_L[, 1:cutOff]
+#plot_corrXS_barchart(mat_L, group_info = NULL, xAxis_title = NULL,
+#                     sigNames = as.character(pctExplndVec))
+# mat_L <- out[[2]]
+mat_Lrot <- varimax(mat_L)[[1]]
+# mat_Lrot <- matrix(as.numeric(mat_Lrot),
+#                    attributes(mat_Lrot)$dim,
+#                    dimnames = attributes(mat_Lrot)$dimnames)
+# mat_R <- varimax(mat_L)[[2]]
+# mat_R <- matrix(as.numeric(mat_R),
+#                 attributes(mat_R)$dim,
+#                 dimnames = attributes(mat_R)$dimnames)
+sigNames <- paste0("PC ", 1:cutOff, "\n", pctExplndVec)
+mat_Lrot <- mat_Lrot[, 1:cutOff]
+plot_corrXS_barchart(mat_Lrot, groupInfo, xAxis_title, sigNames)
+# dfBar <- mat_Lrot %>% as.data.frame()
+# colnames(dfBar) <- sigNames
+# gatherCols <- colnames(dfBar)
+# dfBar$Ticker <- colnames(mat_X_in)
+# dfBar <- dfBar %>% gather_("PC", "val", gatherCols)
+# dfPlot <- dfBar %>% merge(dfAvail[, c("Ticker", "Sector", "Industry")])
+# dfPlot$Sector <- factor(dfPlot$Sector, levels = unique(dfPlot$Sector))
+# dfPlot$Ticker <- factor(dfPlot$Ticker, levels = unique(dfPlot$Ticker))
+# 
+# gg <- ggplot(dfPlot, aes(x = val, y = Ticker, fill = Sector))
+# gg <- gg + geom_bar(stat = "identity", position = position_dodge(width = 0.8))
+# gg <- gg + geom_vline(xintercept = 0, color = "red")
+# gg <- gg + facet_wrap(~PC, nrow = 1)
+# gg <- gg + theme_bw()
+# gg
+#==========================================================================
+# Plot signals (PCs) in time domain together with highly correlated stocks
+stkSymbs <- row.names(mat_Lrot)
+listDrivers <- list()
+for(i in 1:ncol(mat_Lrot)){
+  ind <- which(abs(mat_Lrot[, i]) > 0.7)
+  dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
+  dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
+  listDrivers[[i]] <- dfx
+}
+dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers))
+matS <- mat_X_in %*% matP[, 1:cutOff]
+#
+dfPlotS <- matS[, 3] %>% as.data.frame()
+dfPlotS$date <- df_pca$date
+colnames(dfPlotS)[1] <- "Signal"
+gg <- ggplot(dfPlotS, aes(x = date, y = Signal))
 gg <- gg + geom_line()
-gg <- gg + scale_x_date(breaks = scales::breaks_pretty(n = 4), labels = scales::date_format("%b\n%Y"))
-gg <- gg + facet_wrap(~symbol, scales = "free_y")
 gg
-#-----------------------------------------------------------------------------
+#
+
+theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == 3)]
+dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ts", "val", theseHiCor)
+gg <- ggplot()
+gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = Signal, group = 1), color = "grey", lwd = 1.3)
+gg <- gg + geom_line(data = dfTracks, aes(x = date, y = val, group = ts, color = ts))
+gg
+gg <- gg + scale_color_manual(values = color_vec_tracks)
+gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+gg <- gg + labs(title = fig_title_vec[i])
+#==========================================================================
+
+
+
+
+
+
+
+
+
+
+
 #df_pca <- dfFx[which(year(dfFx$date) > 2018), c("symbol", "date", "pctlOsc")]
-df <- as.data.frame(rbind(dfFx[, c("symbol", "date", "pctlOsc")], dfStk[, c("symbol", "date", "pctlOsc")]))
-df_pca <- df[which(year(df$date) > 2018), ]
-df_pca <- df_pca %>% spread(symbol, pctlOsc)
+#df <- as.data.frame(rbind(dfFx[, c("symbol", "date", "pctlOsc")], dfStk[, c("symbol", "date", "pctlOsc")]))
+df <- dfStk[, c("symbol", "date", "pctlOsc")]
+#df_pca <- df[which(year(df$date) > 2018), ]
+df_pca <- df %>% spread(symbol, pctlOsc)
 # Remove leading NAs if using percentile oscillator
-ind_rm <- 1:(rollWind - 1)
-df_pca <- df_pca[-ind_rm, ]
-o <- apply(df_pca, 2, function(x) length(which(is.na(x))))
-#table(o)
-#ind_na <- which(is.na(df$p))
+# ind_rm <- 1:(rollWind - 1)
+# df_pca <- df_pca[-ind_rm, ]
+#---
+o <- apply(df_pca, 2, function(x) length(which(is.na(x)))); o
+ind_na <- which(is.na(df$p))
 ind_na <- which(o > 0)
 if(length(ind_na) != 0){
   df_pca[, ind_na] <- na.approx(df_pca[, ind_na])
 }
+#---
 # Shorten names
 # colnames(df_pca) <- gsub("ICE FUTURES U.S.", "ICE", colnames(df_pca))
 # colnames(df_pca) <- gsub("CHICAGO BOARD OF TRADE", "CBoT", colnames(df_pca))
 # colnames(df_pca) <- gsub("NEW YORK MERCANTILE EXCHANGE", "NYME", colnames(df_pca))
 # colnames(df_pca) <- gsub("CHICAGO MERCANTILE EXCHANGE", "CME", colnames(df_pca))
 # colnames(df_pca) <- gsub("COMMODITY EXCHANGE INC.", "CE", colnames(df_pca))
-mat_X_in <- as.matrix(df_pca[, -1])
-o <- apply(mat_X_in, 1, function(x) length(which(is.na(x))))
-#table(o)
-row.names(mat_X_in) <- df_pca$date
-mat_X_in <- mat_X_in[-which(o > 0), ]
-out <- get_S_and_corrXS(mat_X_in)
-mat_L <- out[[2]]
-eigVals <- out[[3]]
-pctExplnd <- cumsum(eigVals) / sum(eigVals)
-ind90pctExplnd <- which(pctExplnd >= 0.90)[1]
-pctExplndVec <- round(eigVals[1:ind90pctExplnd], 3)
-mat_L <- mat_L[, 1:ind90pctExplnd]
-plot_corrXS_barchart(mat_L, group_info = NULL, xAxis_title = NULL,
-                     sigNames = as.character(pctExplndVec))
-mat_L <- out[[2]]
-mat_Lrot <- varimax(mat_L)[[1]]
-mat_Lrot <- matrix(as.numeric(mat_Lrot),
-                   attributes(mat_Lrot)$dim,
-                   dimnames = attributes(mat_Lrot)$dimnames)
-mat_R <- varimax(mat_L)[[2]]
-mat_R <- matrix(as.numeric(mat_R),
-                attributes(mat_R)$dim,
-                dimnames = attributes(mat_R)$dimnames)
-xAxis_title <- "Varimax Rotated Correlation"
-mat_Lrot <- mat_Lrot[, 1:5]
-plot_corrXS_barchart(mat_Lrot, group_info = NULL, xAxis_title, sigNames = NULL)
 
 
 
@@ -424,6 +458,129 @@ plot_corrXS_barchart(mat_Lrot, group_info = NULL, xAxis_title, sigNames = NULL)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fxVec <- c("eurgbp", "eurusd",
+           "audusd", "usdjpy",
+           "audjpy", "btcusd")
+#fx_vec2 <- c("eurjpy", "usdcad", "usdchf")
+#stock_vec <- NULL
+stkVec <- allStks
+stock_vec <- c("XLF", "XLI", "XLK",
+               "IYR", "XLV", "XLY", "XLP")
+# stock_vec <- c("ES=F", "GC=F", "NG=F", "CL=F", "CT=F", "KC=F", "CC=F",
+#                "SB=F", "ZB=F", "ZN=F", "ZF=F", "XLF", "XLI", "XLK",
+#                "IYR", "XLV", "XLY", "XLP")
+#max_length <- 2000
+max_length <- round(length(stkVec) * 1.75)
+#-----------------------------------------------------------------------------
+# fx_emaPer_vec <- rep(34, length(fx_vec))
+# stock_emaPer_vec <- rep(55, length(stock_vec))
+# emaPer_vec <- c(fx_emaPer_vec, stock_emaPer_vec)
+#-----------------------------------------------------------------------------
+time_step <- "daily" #1min, 5min, 15min, 30min, 60min, daily, weekly
+#=============================================================================
+time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
+time_step_num <- as.numeric(stringr::str_extract_all(time_step, "[0-9]+")[[1]])
+if(time_step_unit == "min"){
+  stkGetField <- "tiingo.iex"
+  fxFreqField <- time_step
+  fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
+}else{
+  stkGetField <- "tiingo"
+  fxFreqField <- "1day"
+  fromdate <- Sys.Date() - max_length
+}
+#=============================================================================
+av_api_key("HQBAWJK4Y3YW81VG")
+tiingo_api_key("36ed3f9ac9c2ba969b80c8389bc9a1e1fcdfcc42")
+#=============================================================================
+# Stocks
+if(!is.null(stock_vec)){
+  df_ohlcv <- stkVec %>%
+    tq_get(get = stkGetField,
+           from = fromdate, resample_frequency = time_step) %>%
+    as.data.frame()
+  #df_ohlcv$p <- df_ohlcv$adjusted
+  df_ohlcv$p <- rowSums(df_ohlcv[, c(5:7)]) / 3
+  df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+  dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
+}
+#----------------------------------------------------------------------------
+# Forex or crypto pairs
+if(!is.null(fxVec)){
+  df_ohlcv <- fxVec %>%
+    tq_get(get = "tiingo.crypto",
+           from = fromdate, resample_frequency = fxFreqField) %>%
+    as.data.frame()
+  df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+  df_ohlcv$p <- rowSums(df_ohlcv[, c(5:7)]) / 3
+  dfFx <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo",
+                       "volumeNotional", "tradesDone")]
+}
+#=============================================================================
+# Check if there are any NAs
+o <- apply(dfFx, 2, function(x) length(which(is.na(x)))); o
+ind_na <- which(is.na(dfFx$p))
+if(length(ind_na) != 0){
+  df$p <- na.approx(df$p)
+}
+o <- apply(dfStk, 2, function(x) length(which(is.na(x)))); o
+ind_na <- which(is.na(dfFx$p))
+if(length(ind_na) != 0){
+  df$p <- na.approx(df$p)
+}
+#-----------------------------------------------------------------------------
+# Get percentile oscillator series
+rollWind <- 89
+dfStk <- dfStk %>% group_by(symbol) %>%
+  mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
+  as.data.frame()
+dfFx <- dfFx %>% group_by(symbol) %>%
+  mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
+  as.data.frame()
+dfStk <- dfStk[-which(is.na(dfStk$pctlOsc)), ]
+dfFx <- dfFx[-which(is.na(dfFx$pctlOsc)), ]
+#-----------------------------------------------------------------------------
+# # Get p - ema oscillator
+# dfStk <- dfStk %>% group_by(symbol) %>%
+#   mutate(ema = EMA(p, per_ema_for_detrend)) %>%
+#   mutate(difEMA = p - ema) %>%
+#   as.data.frame()
+# dfFx <- dfFx %>% group_by(symbol) %>%
+#   mutate(ema = EMA(p, per_ema_for_detrend)) %>%
+#   mutate(difEMA = p - ema) %>%
+#   as.data.frame()
+#-----------------------------------------------------------------------------
+gg <- ggplot(dfFx, aes(x = date, y = pctlOsc))
+gg <- gg + geom_line()
+if(time_step_unit != "min"){
+  dfFx$date <- as.Date(dfFx$date)
+  gg <- gg + scale_x_date(breaks = scales::breaks_pretty(n = 4), labels = scales::date_format("%b\n%Y"))
+}
+gg <- gg + facet_wrap(~symbol, scales = "free_y")
+gg
+
+gg <- ggplot(dfStk, aes(x = date, y = pctlOsc))
+gg <- gg + geom_line()
+if(time_step_unit != "min"){
+  gg <- gg + scale_x_date(breaks = scales::breaks_pretty(n = 4), labels = scales::date_format("%b\n%Y"))
+}
+gg <- gg + facet_wrap(~symbol, scales = "free_y")
+gg
+#-----------------------------------------------------------------------------
 
 
 
@@ -463,3 +620,109 @@ plot_corrXS_barchart(mat_Lrot, group_info = NULL, xAxis_title, sigNames = NULL)
 # df_s <- out_list[[1]]
 # ratio1 <- out_list[[2]]
 # ratio2 <- out_list[[3]]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# if(!is.null(stock_vec)){
+#   if(time_step_unit == "min"){
+#     # If intraday
+#     # df_ohlcv <- stock_symbol %>%
+#     #   tq_get(get = "alphavantage", av_fun = "TIME_SERIES_INTRADAY", interval = time_step, outputsize = "full") %>% as.data.frame()
+#     # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#     
+#     fromdate <- Sys.Date() - max_length / (7.5 * (60 / time_step_num))
+#     df_ohlcv <- stock_vec[1] %>% tq_get(get = "tiingo.iex",
+#                                         from   = fromdate,
+#                                         resample_frequency = time_step) %>% as.data.frame()
+#     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#     
+#     
+#   }
+#   if(time_step_unit == "daily"){
+#     # If daily
+#     fromdate <- Sys.Date() - max_length
+#     df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
+#                                      from = fromdate) %>% as.data.frame()
+#     df_ohlcv$p <- df_ohlcv$adjusted
+#     # df_ohlcv <- stock_symbol %>%
+#     #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_DAILY_ADJUSTED", outputsize = "full") %>% as.data.frame(tbl_ohlcv)
+#     # df_ohlcv$p <- df_ohlcv$adjusted_close
+#   }
+#   if(time_step_unit == "weekly"){
+#     # If weekly
+#     fromdate <- Sys.Date() - max_length * 5
+#     df_ohlcv <- stock_vec %>% tq_get(get = "stock.prices",
+#                                      from = fromdate,
+#                                      periodicity = time_step_unit) %>% as.data.frame()
+#     df_ohlcv$p <- df_ohlcv$adjusted
+#     
+#     # df_ohlcv <- stock_symbol %>%
+#     #   tq_get(get = "alphavantager", av_fun = "TIME_SERIES_WEEKLY_ADJUSTED", outputsize = "full") %>% as.data.frame()
+#     # df_ohlcv$p <- df_ohlcv$adjusted_close
+#   }
+# }
+# # Forex
+# # AlphaVantage allows only 5 queries per minute.
+# # So split queries into two batches with minute wait in between.
+# if(!is.null(fx_vec1)){
+#   
+#   # df_ohlcv1 <- fx_vec1 %>%  tq_get(get = "alphavantager",
+#   #                                av_fun = "FX_WEEKLY",
+#   #                                outputsize = "full") %>% as.data.frame()
+#   # Sys.sleep(61)
+#   # df_ohlcv2 <- fx_vec2 %>%  tq_get(get = "alphavantager",
+#   #                                av_fun = "FX_WEEKLY",
+#   #                                outputsize = "full") %>% as.data.frame()
+#   # df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+#   # df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#   # df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+#   # colnames(df_ohlcv)[2] <- "date"
+#   # dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+#   if(time_step_unit == "min"){
+#     # If intraday
+#     df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantage",
+#                                     av_fun     = "TIME_SERIES_INTRADAY",
+#                                     interval   = time_step,
+#                                     outputsize = "full") %>% as.data.frame()
+#     Sys.sleep(61)
+#     df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantage",
+#                                     av_fun     = "TIME_SERIES_INTRADAY",
+#                                     interval   = time_step,
+#                                     outputsize = "full") %>% as.data.frame()
+#     df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+#     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#     df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+#     colnames(df_ohlcv)[2] <- "date"
+#     dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+#   }
+#   if(time_step_unit == "daily"){
+#     # If daily
+#     df_ohlcv1 <- fx_vec1 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
+#     df_ohlcv2 <- fx_vec2 %>% tq_get(get = "alphavantager", av_fun = "FX_DAILY", from_symbol = symb_currency_from, outputsize = "full") %>% as.data.frame()
+#     df_ohlcv <- as.data.frame(rbind(df_ohlcv1, df_ohlcv2))
+#     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#     df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+#     colnames(df_ohlcv)[2] <- "date"
+#     dfFx <- df_ohlcv[, c("symbol", "date", "p", "diffHiLo")]
+#   }
+#   if(time_step_unit == "weekly"){
+#     # If weekly
+#     df_ohlcv <- fx_vec1 %>% tq_get("", get = "alphavantager", av_fun = "FX_WEEKLY", from_symbol = symb_currency_from, to_symbol = symb_currency_to, outputsize = "full") %>% as.data.frame()
+#     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
+#   }
+#   df_ohlcv$symbol <- NULL
+# }
