@@ -72,6 +72,8 @@ get_S_and_corrXS <- function(mat_X_in){
       mat_P[, i] <- -mat_P[, i]
     }
   }
+  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eigVals)) * 1 / 2
+  mat_S_all <- (mat_S_all + 1) * 1 / 2
   cormat_XS <- D_sdX_inv %*% mat_P %*% sqrt(mat_G)
   row.names(cormat_XS) <- colnames(mat_X_in)
   mat_L <- cormat_XS
@@ -182,55 +184,6 @@ pctileFun <- function(x){
   out <- ecdf(x)(x[length(x)])
   return(out)
 }
-#----------------------------------------------------------------------------
-# Extract seasonality
-# getSeasons <- function(df_in,
-#                        freq = 52,
-#                        mod_type = "multiplicative",
-#                        show_graphs = T){
-#   # daily_freq <- 104
-#   # weekly_freq <- 52
-#   # monthly_freq <- 12
-#   # freq <- daily_freq
-#   tsStart <- c(year(df_in$date)[1], week(df_in$date)[1])
-#   #tsStart <- c(year(df_in$date)[1], month(df_in$date)[1])
-#   item_vec <- unique(df_in$Item)
-#   n_items <- length(item_vec)
-#   ratio_vec <- c()
-#   ratioCV_vec <- c()
-#   list_df <- list()
-#   for(i in 1:n_items){
-#     this_item <- item_vec[i]
-#     print(this_item)
-#     this_dateVec <- subset(df_in, Item == this_item)$date
-#     this_series <- subset(df_in, Item == this_item)$Value
-#     names(this_series) <- this_dateVec
-#     this_series <- na.approx(this_series)
-#     this_series <- na.trim(this_series)
-#     this_dateVec <- names(this_series)
-#     this_ts <- ts(this_series, start = tsStart, frequency = freq)
-#     #plot.ts(this_ts)
-#     ts_decomp <- this_ts %>%
-#       decompose(type = mod_type) #"additive" or "multiplicative"
-#     df_out <- data.frame(date = this_dateVec, Item = this_item, Value = as.numeric(ts_decomp$seasonal))
-#     list_df[[i]] <- df_out
-#     mu_ratio <- mean(abs(ts_decomp$seasonal / ts_decomp$random), na.rm = T)
-#     ratio_vec[i] <- mu_ratio
-#     ratioCV_vec[i] <- sd(abs(ts_decomp$seasonal / ts_decomp$random), na.rm = T) / mu_ratio
-#     if(show_graphs){
-#       plot(ts_decomp)
-#       Sys.sleep(2)
-#     }
-#     
-#   }
-#   # names(ratio_vec) <- item_vec
-#   # names(ratioCV_vec) <- item_vec
-#   # hist(ratio_vec)
-#   # hist(ratioCV_vec)
-#   df_s <- as.data.frame(do.call(rbind, list_df))
-#   list_out <- list(df_s, ratio_vec, ratioCV_vec)
-#   return(list_out)
-# }
 #=============================================================================
 #=============================================================================
 # End function definition
@@ -313,7 +266,7 @@ df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 55
+rollWind <- 34
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
   #mutate(pctlOsc = 2 * pctlOsc - 1) %>%
@@ -825,4 +778,55 @@ gg
 #     df_ohlcv$p <- rowSums(df_ohlcv[, c(3:5)]) / 3
 #   }
 #   df_ohlcv$symbol <- NULL
+# }
+
+
+#----------------------------------------------------------------------------
+# Extract seasonality
+# getSeasons <- function(df_in,
+#                        freq = 52,
+#                        mod_type = "multiplicative",
+#                        show_graphs = T){
+#   # daily_freq <- 104
+#   # weekly_freq <- 52
+#   # monthly_freq <- 12
+#   # freq <- daily_freq
+#   tsStart <- c(year(df_in$date)[1], week(df_in$date)[1])
+#   #tsStart <- c(year(df_in$date)[1], month(df_in$date)[1])
+#   item_vec <- unique(df_in$Item)
+#   n_items <- length(item_vec)
+#   ratio_vec <- c()
+#   ratioCV_vec <- c()
+#   list_df <- list()
+#   for(i in 1:n_items){
+#     this_item <- item_vec[i]
+#     print(this_item)
+#     this_dateVec <- subset(df_in, Item == this_item)$date
+#     this_series <- subset(df_in, Item == this_item)$Value
+#     names(this_series) <- this_dateVec
+#     this_series <- na.approx(this_series)
+#     this_series <- na.trim(this_series)
+#     this_dateVec <- names(this_series)
+#     this_ts <- ts(this_series, start = tsStart, frequency = freq)
+#     #plot.ts(this_ts)
+#     ts_decomp <- this_ts %>%
+#       decompose(type = mod_type) #"additive" or "multiplicative"
+#     df_out <- data.frame(date = this_dateVec, Item = this_item, Value = as.numeric(ts_decomp$seasonal))
+#     list_df[[i]] <- df_out
+#     mu_ratio <- mean(abs(ts_decomp$seasonal / ts_decomp$random), na.rm = T)
+#     ratio_vec[i] <- mu_ratio
+#     ratioCV_vec[i] <- sd(abs(ts_decomp$seasonal / ts_decomp$random), na.rm = T) / mu_ratio
+#     if(show_graphs){
+#       plot(ts_decomp)
+#       Sys.sleep(2)
+#     }
+#     
+#   }
+#   # names(ratio_vec) <- item_vec
+#   # names(ratioCV_vec) <- item_vec
+#   # hist(ratio_vec)
+#   # hist(ratioCV_vec)
+#   df_s <- as.data.frame(do.call(rbind, list_df))
+#   list_out <- list(df_s, ratio_vec, ratioCV_vec)
+#   return(list_out)
 # }
