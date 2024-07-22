@@ -9,7 +9,7 @@ library(scales)
 get_S_and_corrXS <- function(mat_X_in){
   # mat_P = eigenvectors of the data correlation matrix
   # mat_G = corresponding eigenvalues
-  mat_X_centered <- scale(mat_X_in, scale = F)
+  #mat_X_centered <- scale(mat_X_in, scale = F)
   # out_svd <- svd(mat_X_centered)
   # sing_values <- out_svd$d
   # n_obs <- nrow(mat_X_centered)
@@ -52,15 +52,16 @@ get_S_and_corrXS <- function(mat_X_in){
       ind_tracks <- which(abs(this_loadvec) == max(abs(this_loadvec)))
     }
     if(length(ind_tracks) == 1){
-      list_X_hiCorr_avg[[i]] <- mat_X_centered[, ind_tracks]
+      list_X_hiCorr_avg[[i]] <- mat_X_in[, ind_tracks]
     }else{
       loadvec_kept <- this_loadvec[ind_tracks]
-      list_X_hiCorr_avg[[i]] <- rowMeans(mat_X_centered[, ind_tracks])
+      list_X_hiCorr_avg[[i]] <- rowMeans(mat_X_in[, ind_tracks])
       
     }
   }
   mat_X_hiCorr_avg <- do.call(cbind, list_X_hiCorr_avg)
-  mat_S_all <- mat_X_centered %*% mat_P
+  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eigVals)) * 1 / 2
+  mat_S_all <- (mat_S_all + 1) * 1 / 2
   #mat_S_all <- mat_X_in %*% mat_P
   for(i in 1:n_items){
     this_S <- mat_S_all[, i]
@@ -74,7 +75,6 @@ get_S_and_corrXS <- function(mat_X_in){
   cormat_XS <- D_sdX_inv %*% mat_P %*% sqrt(mat_G)
   row.names(cormat_XS) <- colnames(mat_X_in)
   mat_L <- cormat_XS
-  mat_S_all <- mat_X_centered %*% mat_P
   #---------------------------------------------
   # res <- FactoMineR::PCA(mat_pctDiff_in, scale.unit = F, ncp = ncol(mat_pctDiff_in), graph = F)
   # mat_L_FactoMiner <- res$var$coord
@@ -238,19 +238,21 @@ pctileFun <- function(x){
 #=============================================================================
 # Tiingo has good free stock screener with option to export to csv:
 # https://app.tiingo.com/screener/overview
-workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
-thisFile <-"largeCap.csv"
+#workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
+workFolder <- "/home/ben/Documents/finAnalysis/"
+thisFile <-"soundFundmntls.csv"
 thisFilepath <- paste0(workFolder, thisFile)
+#list.files(workFolder)
 dfThese <- read.csv(thisFilepath, stringsAsFactors = F) #Tiingo screener
 theseStks <- unique(dfThese$Ticker)
 unique(dfThese$Sector)
-dfAvailRaw <- riingo::supported_tickers() %>% as.data.frame()
+dfAvailRaw <- riingo::supported_tickers() %>% as.data.frame() #Get list of all available stocks
 colnames(dfAvailRaw)[1] <- "Ticker"
 dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
-                              exchange %in% theseExchngs & 
-                              endDate == (Sys.Date() - 1))
+                                exchange %in% theseExchngs & 
+                                endDate == (Sys.Date() - 1))
 
 #unique(dfAvailRaw$exchange)
 #theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
@@ -261,10 +263,11 @@ dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
 allStks <- unique(dfAvail$Ticker)
 length(allStks)
 #allStks <- allStks[-which(allStks == "AHL-P-C")]
-fromdate <- Sys.Date() - round(length(allStks) * 1.35)
+fromdate <- Sys.Date() - round(length(allStks) * 12)
 stkVec <- allStks
 #=============================================================================
 # Sort out sector info, especially for graphing purposes
+unique(dfAvail$Sector)
 dfAvail$Sector[grep("Materials", dfAvail$Sector)] <- "Materials"
 dfAvail$Sector[grep("Tech", dfAvail$Sector)] <- "Technology"
 dfAvail$Sector[grep("Unknown", dfAvail$Sector)] <- "Unknown"
@@ -276,8 +279,7 @@ sctrVec <- unique(dfAvail$Sector)
 listGroups <- list()
 for(i in 1:length(sctrVec)){
   listGroups[[sctrVec[i]]] <- dfAvail[, c("Ticker", "Sector")] %>%
-    subset(Sector == sctrVec[i]) %>%
-    .$Ticker
+    subset(Sector == sctrVec[i]) %>% .$Ticker
 }
 groupNames <- sctrVec
 n_groups <- length(listGroups)
@@ -287,12 +289,12 @@ n_groups <- length(listGroups)
 bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
 groupColors <- sample(bag_of_colors, n_groups)
 groupInfo <- list(listGroups, groupNames, groupColors)
-outlist <- group_fn(groupInfo)
-cols_ordered_by_group <- outlist[[1]]
-group_color_vec <- outlist[[2]]
-group_vec_ordered <- outlist[[3]]
-ind_ordered_cols <- outlist[[4]]
-df_match_group <- data.frame(Item = cols_ordered_by_group, Group = group_vec_ordered)
+# outlist <- group_fn(groupInfo)
+# cols_ordered_by_group <- outlist[[1]]
+# group_color_vec <- outlist[[2]]
+# group_vec_ordered <- outlist[[3]]
+# ind_ordered_cols <- outlist[[4]]
+# df_match_group <- data.frame(Item = cols_ordered_by_group, Group = group_vec_ordered)
 #=============================================================================
 # Download price series
 df_ohlcv  <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
@@ -302,48 +304,188 @@ df_ohlcv$p <- df_ohlcv$adjusted
 # dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
 # o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
 df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
-dfStk <- df_ohlcv[, c("symbol", "date", "p")]
 #dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
 #o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
-saveToFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
-fileName <- "largeCap.rds"
-saveFilePath <- paste0(saveToFolder, fileName)
-saveRDS(dfStk, saveFilePath)
+# saveToFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
+# fileName <- "largeCap.rds"
+# saveFilePath <- paste0(saveToFolder, fileName)
+# saveRDS(dfStk, saveFilePath)
 #=============================================================================
 # Get percentile oscillator series
-rollWind <- 89
+dfStk <- df_ohlcv[, c("symbol", "date", "p")]
+rollWind <- 55
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
-  mutate(pctlOsc = 2 * pctlOsc - 1) %>%
+  #mutate(pctlOsc = 2 * pctlOsc - 1) %>%
   as.data.frame()
 dfx <- dfStk[, c("symbol", "date", "pctlOsc")] %>% spread(symbol, pctlOsc)
-o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
+o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o;table(o)
+max(o);which(o == max(o))
+dfStk <- dfStk %>% subset(symbol != "TECX")
 dfStk <- dfStk[-which(is.na(dfStk$pctlOsc)), c("symbol", "date", "pctlOsc")]
 o <- apply(dfStk, 2, function(x) length(which(is.na(x))));o
 #=============================================================================
 # df <- dfStk[, c("symbol", "date", "pctlOsc")]
 # o <- apply(df, 2, function(x) length(which(is.nan(x))));o
 df_pca <- dfStk %>% spread(symbol, pctlOsc)
-o <- apply(df_pca, 2, function(x) length(which(is.na(x))));o
-mat_X_in <- as.matrix(df_pca[, -1]) %>% scale()
+o <- apply(df_pca, 2, function(x) length(which(is.na(x))));o;table(o)
+mat_X_in <- as.matrix(df_pca[, -1]) %>% scale(scale = F)
 row.names(mat_X_in) <- df_pca$date
-o <- apply(mat_X_in, 2, function(x) length(which(is.na(x))));o
+o <- apply(mat_X_in, 2, function(x) length(which(is.na(x))));o;table(o)
 out <- get_S_and_corrXS(mat_X_in)
 matS <- out[[1]]
 mat_L <- out[[2]]
 eigVals <- out[[3]]
 matP <- out[[4]]
+mat_Lrot <- varimax(mat_L)[[1]]
 #matS <- mat_X_in %*% matP
 pctExplnd <- cumsum(eigVals) / sum(eigVals)
 cutOff1 <- which(pctExplnd >= 0.80)[1]
-cutOff2 <- which(colMeans(abs(mat_L)) > 0.15)
+#cutOff2 <- which(colMeans(abs(mat_Lrot)) > 0.15)
+cutOff2 <- which(eigVals / sum(eigVals) < 0.05)[1]
 cutOff <- min(max(cutOff1), max(cutOff2))
+#if(cutOff > 7){cutOff <- 7}
+#cutOff <- 7
 pctExplndVec <- round(100 * eigVals[1:cutOff] / sum(eigVals), 2)
 mat_L <- mat_L[, 1:cutOff]
+mat_Lrot <- mat_Lrot[, 1:cutOff]
+sigNames <- paste0("PC ", 1:cutOff, "\n", pctExplndVec)
+plot_corrXS_barchart(mat_Lrot, groupInfo, xAxis_title, sigNames)
+#==========================================================================
+# Plot signals (PCs) in time domain together with highest correlated stocks
+stkSymbs <- row.names(mat_Lrot)
+listDrivers <- list()
+for(i in 1:cutOff){
+  theseCorrs <- abs(mat_Lrot[, i])
+  #ind <- which(theseCorrs > 0.6)
+  ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.98))
+  dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
+  dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
+  listDrivers[[i]] <- dfx
+}
+dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers)) %>% merge(dfAvail) %>%
+  subset(Lcorr > 0.6)
+dfHiLcorStks$PC <- as.integer(dfHiLcorStks$PC)
+#matSadj <- (mat_X_in %*% matP[, 1:cutOff] %*% diag(1 / sqrt(eigVals[1:cutOff]))) * 1 / 2
+#dfS <- matSadj %>% as.data.frame()
+dfS <- matS[, 1:cutOff] %>% as.data.frame()
+dfS$date <- df_pca$date
+dfS <- dfS %>% gather_("PC", "val", colnames(dfS)[-ncol(dfS)])
+dfS$PC <- as.integer(gsub("V", "", dfS$PC))
+#-----------------------------------------------------------------------
+listGg <- list()
+for(i in 1:cutOff){
+  theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == i)]
+  nStks <- length(theseHiCor)
+  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nStks)
+  theseColors <- sample(bag_of_colors, nStks)
+  dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ticker", "val", theseHiCor)
+  dfPlotS <-dfS %>% subset(PC == i)
+  gg <- ggplot()
+  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red")
+  gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = val), color = "grey", lwd = 1.3)
+  gg <- gg + geom_line(data = dfTracks, aes(x = date, y = val, group = ticker, color = ticker))
+  gg <- gg + scale_color_manual(values = theseColors)
+  #gg <- gg + ylim(-0.1, 1.1)
+  gg <- gg + scale_y_continuous(breaks = c(0, 0.5, 1))
+  gg <- gg + theme_bw()
+  gg <- gg + theme(axis.title = element_blank(),
+                   legend.title = element_blank(),
+                   axis.text = element_text(size = 7),
+                   legend.text = element_text(size = 7))
+  listGg[[i]] <- gg
+}
+wrap_plots(listGg, ncol = 1)
+#-----------------------------------------------------------------------
+# Examine individual signals
+thisPC <- 5
+dfPlotS <-dfS %>% subset(PC == thisPC)
+gg <- ggplot(dfPlotS, aes(x = date, y = val))
+gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red")
+gg <- gg + geom_line()
+gg
+#
+theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == thisPC)]
+nStks <- length(theseHiCor)
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nStks)
+theseColors <- sample(bag_of_colors, nStks)
+dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ts", "val", theseHiCor)
+gg <- ggplot()
+gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red")
+gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = Signal, group = 1), color = "grey", lwd = 1.3)
+gg <- gg + geom_line(data = dfTracks, aes(x = date, y = val, group = ts, color = ts))
+gg <- gg + scale_color_manual(values = theseColors)
+#gg <- gg + scale_x_discrete(breaks = xAxis_labels)
+gg <- gg + theme_bw()
+gg
+#--------------------------------------------------------------------------
+# Plot stock divergence from signal
+dfPCDiv <- dfTracks %>% merge(dfPlotS) %>%
+  mutate(PCdiv = Signal - val)
+#gg <- ggplot(dfPCDiv, aes(x = date, y = PCdiv, group = ts, color = ts))
+gg <- ggplot(dfPCDiv, aes(x = date, y = PCdiv))
+gg <- gg + geom_hline(yintercept = 0, color = "red") + geom_line()
+gg <- gg + geom_hline(yintercept = c(-1, 1), color = "red") + geom_line()
+gg <- gg + facet_wrap(~ts)
+gg <- gg + theme_bw()
+gg
+#==========================================================================
+# Save to file
+workFolder <- "/home/ben/Documents/finAnalysis/"
+saveFile <-"hiLcor.csv"
+saveFilepath <- paste0(workFolder, saveFile)
+saveRDS(dfHiLcorStks, saveFilepath)
+#write.csv(dfHiLcorStks, thisFilepath)
+
+#==========================================================================
+
+
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#==========================================================================
+#==========================================================================
+#==========================================================================
+# End
+#==========================================================================
+#==========================================================================
+#==========================================================================
+#==========================================================================
 #plot_corrXS_barchart(mat_L, group_info = NULL, xAxis_title = NULL,
 #                     sigNames = as.character(pctExplndVec))
 # mat_L <- out[[2]]
-mat_Lrot <- varimax(mat_L)[[1]]
+# mat_Lrot <- varimax(mat_L)[[1]]
 # mat_Lrot <- matrix(as.numeric(mat_Lrot),
 #                    attributes(mat_Lrot)$dim,
 #                    dimnames = attributes(mat_Lrot)$dimnames)
@@ -351,9 +493,7 @@ mat_Lrot <- varimax(mat_L)[[1]]
 # mat_R <- matrix(as.numeric(mat_R),
 #                 attributes(mat_R)$dim,
 #                 dimnames = attributes(mat_R)$dimnames)
-sigNames <- paste0("PC ", 1:cutOff, "\n", pctExplndVec)
-mat_Lrot <- mat_Lrot[, 1:cutOff]
-plot_corrXS_barchart(mat_Lrot, groupInfo, xAxis_title, sigNames)
+
 # dfBar <- mat_Lrot %>% as.data.frame()
 # colnames(dfBar) <- sigNames
 # gatherCols <- colnames(dfBar)
@@ -369,46 +509,6 @@ plot_corrXS_barchart(mat_Lrot, groupInfo, xAxis_title, sigNames)
 # gg <- gg + facet_wrap(~PC, nrow = 1)
 # gg <- gg + theme_bw()
 # gg
-#==========================================================================
-# Plot signals (PCs) in time domain together with highly correlated stocks
-stkSymbs <- row.names(mat_Lrot)
-listDrivers <- list()
-for(i in 1:ncol(mat_Lrot)){
-  ind <- which(abs(mat_Lrot[, i]) > 0.7)
-  dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
-  dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
-  listDrivers[[i]] <- dfx
-}
-dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers))
-matS <- mat_X_in %*% matP[, 1:cutOff]
-#
-dfPlotS <- matS[, 3] %>% as.data.frame()
-dfPlotS$date <- df_pca$date
-colnames(dfPlotS)[1] <- "Signal"
-gg <- ggplot(dfPlotS, aes(x = date, y = Signal))
-gg <- gg + geom_line()
-gg
-#
-
-theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == 3)]
-dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ts", "val", theseHiCor)
-gg <- ggplot()
-gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = Signal, group = 1), color = "grey", lwd = 1.3)
-gg <- gg + geom_line(data = dfTracks, aes(x = date, y = val, group = ts, color = ts))
-gg
-gg <- gg + scale_color_manual(values = color_vec_tracks)
-gg <- gg + scale_x_discrete(breaks = xAxis_labels)
-gg <- gg + labs(title = fig_title_vec[i])
-#==========================================================================
-
-
-
-
-
-
-
-
-
 
 
 #df_pca <- dfFx[which(year(dfFx$date) > 2018), c("symbol", "date", "pctlOsc")]
