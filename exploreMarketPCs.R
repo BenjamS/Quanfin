@@ -242,12 +242,13 @@ plot_validation <- function(yhat, ypredict, df_wave){
   #df_plot <- df_wave[, c("date", "date_chr", "p", "ema", "slope")]
   # df_plot <- df_wave[, c("date", "date_chr", "p", "ema", "pctlOsc")]
   df_plot$yhat <- c(yhat, ypredict[, 1])
-  # ind_divide <- length(yhat)
+  ind_divide <- length(yhat)
   # # df_plot$set <- NA
   # # df_plot$set[ind_fit] <- "fit"
   # # df_plot$set[ind_test] <- "test"
   # df_plot$yhat_p <- df_plot$p + df_plot$yhat
   my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
+  df_plot$date_chr <- NULL
   df_plot <- df_plot %>% gather(Type, Value, pctlOsc:yhat)
   df_plot$Value <- as.numeric(df_plot$Value)
   # #unique(df_plot$Type)
@@ -262,7 +263,7 @@ plot_validation <- function(yhat, ypredict, df_wave){
   colors_dtFit <- distinct_colors[1:n_types_fit]
   #colors_ts <- distinct_colors[(n_types_fit + 1):(n_types_fit + n_types_ts)]
   
-  df_plot_ts_dtFit$date_chr <- as.factor(df_plot_ts_dtFit$date_chr)
+  df_plot_ts_dtFit$date_chr <- as.factor(as.character(df_plot_ts_dtFit$date))
   #df_plot_dt <- subset(df_plot_ts_dtFit, Type == "slope")
   df_plot_dt <- subset(df_plot_ts_dtFit, Type == "pctlOsc")
   df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
@@ -271,7 +272,7 @@ plot_validation <- function(yhat, ypredict, df_wave){
   gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date_chr, y = Value, color = Type, group = 1), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot_dt, aes(x = date_chr, y = Value, color = Type, group = 1))#, color = colors_dtFit[1])
   gg <- gg + scale_color_manual(values = colors_dtFit)
-  gg <- gg + geom_hline(yintercept = 0, color = "violet", lwd = 1)
+  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", lwd = 1)
   gg <- gg + geom_vline(aes(xintercept = ind_divide), lwd = 1, color = "violet")
   gg <- gg + theme_bw()
   gg <- gg + scale_x_discrete(breaks = my_breaks)
@@ -359,8 +360,8 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   colors_dtFit <- distinct_colors[sample(1:n, 2)]
   # df_plot_dt <- subset(df_plot, Type == "slope")
   # df_plot_dtFit <- subset(df_plot, Type == "yhat")
-  this_title <- paste(c(paste(time_step, "chart"),
-                        paste(per_ema_for_detrend, "step detrend")),
+  this_title <- paste(c(paste(time_step, "chart")),
+                        #paste(per_ema_for_detrend, "step detrend")),
                       collapse = ", ")  
   gg <- ggplot()
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
@@ -368,7 +369,7 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
   gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks)
-  gg <- gg + geom_hline(yintercept = 0, color = "violet", size = 1)
+  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", size = 1)
   gg <- gg + labs(title = this_title)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
@@ -391,8 +392,8 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
   gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
-  gg <- gg + geom_hline(yintercept = 0, color = "violet", size = 1)
-  gg <- gg + labs(title = this_title)
+  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", size = 1)
+  gg <- gg + labs(title = paste(this_title, "close up"))
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
@@ -402,8 +403,6 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
                    plot.title = element_text(size = 10))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   print(gg)
-  
-  
   
 }
 #========================================================================
@@ -459,7 +458,7 @@ dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
                                 exchange %in% theseExchngs & 
-                                endDate == (Sys.Date() - 3))
+                                endDate == (Sys.Date() - 1))
 #unique(dfAvailRaw$exchange)
 #theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 # dfAvail <- dfAvailRaw %>% subset(exchange %in% theseExchngs &
@@ -519,7 +518,7 @@ df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 34
+rollWind <- 21
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
   #mutate(pctlOsc = 2 * pctlOsc - 1) %>%
