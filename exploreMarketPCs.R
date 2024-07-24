@@ -77,8 +77,8 @@ get_S_and_corrXS <- function(mat_X_in){
     }
   }
   # Recalculate signals based on new P with changed signs
-  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eig_values)) * 1 / 2
-  mat_S_all <- (mat_S_all + 1) * 1 / 2
+  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eig_values)) * 1 / 4
+  #mat_S_all <- (mat_S_all + 1) * 1 / 2
   cormat_XS <- D_sdX_inv %*% mat_P %*% sqrt(mat_G)
   row.names(cormat_XS) <- colnames(mat_X_in)
   mat_L <- cormat_XS
@@ -458,7 +458,7 @@ dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
                                 exchange %in% theseExchngs & 
-                                endDate == (Sys.Date() - 1))
+                                endDate == (Sys.Date() - 0))
 #unique(dfAvailRaw$exchange)
 #theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 # dfAvail <- dfAvailRaw %>% subset(exchange %in% theseExchngs &
@@ -518,10 +518,10 @@ df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 21
+rollWind <- 55
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
-  #mutate(pctlOsc = 2 * pctlOsc - 1) %>%
+  mutate(pctlOsc = 2 * pctlOsc - 1) %>%
   as.data.frame()
 dfx <- dfStk[, c("symbol", "date", "pctlOsc")] %>% spread(symbol, pctlOsc)
 o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o;table(o)
