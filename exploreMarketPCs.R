@@ -77,7 +77,7 @@ get_S_and_corrXS <- function(mat_X_in){
     }
   }
   # Recalculate signals based on new P with changed signs
-  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eig_values)) * 1 / 4
+  mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eig_values)) * 1 / 2
   #mat_S_all <- (mat_S_all + 1) * 1 / 2
   cormat_XS <- D_sdX_inv %*% mat_P %*% sqrt(mat_G)
   row.names(cormat_XS) <- colnames(mat_X_in)
@@ -272,7 +272,7 @@ plot_validation <- function(yhat, ypredict, df_wave){
   gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date_chr, y = Value, color = Type, group = 1), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
   gg <- gg + geom_line(data = df_plot_dt, aes(x = date_chr, y = Value, color = Type, group = 1))#, color = colors_dtFit[1])
   gg <- gg + scale_color_manual(values = colors_dtFit)
-  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", lwd = 1)
+  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
   gg <- gg + geom_vline(aes(xintercept = ind_divide), lwd = 1, color = "violet")
   gg <- gg + theme_bw()
   gg <- gg + scale_x_discrete(breaks = my_breaks)
@@ -369,7 +369,7 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
   gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks)
-  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", size = 1)
+  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
   gg <- gg + labs(title = this_title)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
@@ -392,7 +392,7 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
   gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
   gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
-  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red", size = 1)
+  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
   gg <- gg + labs(title = paste(this_title, "close up"))
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
@@ -518,7 +518,7 @@ df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 55
+rollWind <- 89
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
   mutate(pctlOsc = 2 * pctlOsc - 1) %>%
@@ -588,12 +588,12 @@ for(i in 1:cutOff){
   dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ticker", "pctlOsc", theseHiCor)
   dfPlotS <-dfS %>% subset(PC == i)
   gg <- ggplot()
-  gg <- gg + geom_hline(yintercept = c(0, 1 / 2, 1), color = "red")
+  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red")
   gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = pctlOsc), color = "grey", lwd = 1.3)
   gg <- gg + geom_line(data = dfTracks, aes(x = date, y = pctlOsc, group = ticker, color = ticker))
   gg <- gg + scale_color_manual(values = theseColors)
   #gg <- gg + ylim(-0.1, 1.1)
-  gg <- gg + scale_y_continuous(breaks = c(0, 0.5, 1))
+  gg <- gg + scale_y_continuous(breaks = c(-1, 0, 1))
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    legend.title = element_blank(),
@@ -630,7 +630,7 @@ this_period_label <- "period (days)"
 #   dj <- 1 / 250
 #   this_period_label <- "period (days)"
 # }
-i <- 1
+i <- 3
 df_wave <- dfS %>% subset(PC == i)
 df_wave$date_chr <- as.character(df_wave$date)
 #df_wave <- df[-c(1:(rollWind + 1)), c("date", "date_chr", "p", "ema", "pctlOsc")]
