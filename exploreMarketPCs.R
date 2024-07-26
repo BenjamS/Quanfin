@@ -22,7 +22,6 @@ get_S_and_corrXS <- function(mat_X_in){
   
   #mat_X_in[which(is.na(mat_X_in[, 15])), 15]
   
-  
   mat_P <- eigen(cov(mat_X_in))$vectors
   if(mean(mat_P[, 1]) < 0){mat_P <- -mat_P}
   eig_values <- eigen(cov(mat_X_in))$values
@@ -65,7 +64,7 @@ get_S_and_corrXS <- function(mat_X_in){
   }
   mat_X_hiCorr_avg <- do.call(cbind, list_X_hiCorr_avg)
   mat_S_all <- mat_X_in %*% mat_P %*% diag(1 / sqrt(eig_values)) * 1 / 2
-  mat_S_all <- (mat_S_all + 1) * 1 / 2
+  #mat_S_all <- (mat_S_all + 1) * 1 / 2
   #mat_S_all <- mat_X_in %*% mat_P
   for(i in 1:n_items){
     this_S <- mat_S_all[, i]
@@ -237,58 +236,59 @@ fitWave <- function(ts, per_vec, pval_thresh = 0.01, n_lookAhead){
   return(list_out)
 }
 #========================================================================
-plot_validation <- function(yhat, ypredict, df_wave){
-  df_plot <- df_wave
-  #df_plot <- df_wave[, c("date", "date_chr", "p", "ema", "slope")]
-  # df_plot <- df_wave[, c("date", "date_chr", "p", "ema", "pctlOsc")]
-  df_plot$yhat <- c(yhat, ypredict[, 1])
-  ind_divide <- length(yhat)
-  # # df_plot$set <- NA
-  # # df_plot$set[ind_fit] <- "fit"
-  # # df_plot$set[ind_test] <- "test"
-  # df_plot$yhat_p <- df_plot$p + df_plot$yhat
-  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
-  df_plot$date_chr <- NULL
-  df_plot <- df_plot %>% gather(Type, Value, pctlOsc:yhat)
-  df_plot$Value <- as.numeric(df_plot$Value)
-  # #unique(df_plot$Type)
-  # df_plot_ts <- subset(df_plot, Type %in% c("p", "ema", "yhat_p"))
-  # #df_plot_ts_dtFit <- subset(df_plot, Type %in% c("slope", "yhat"))
-  df_plot_ts_dtFit <- df_plot
+plot_validation <- function(dfYhat, dfYpred, dfPlotTs, plotSeparate = T){
+  symbVec <- unique(dfTs$symbol)
+  nTs <- ncol(dfYhat)
+  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+  theseColors <- sample(bag_of_colors, nTs)
+  ind_divide <- nrow(dfYhat)
+  dfPlotMod <- as.data.frame(rbind(dfYhat, dfYpred))
+  dateVec <- subset(dfPlotTs, symbol == symbVec[1])$date; dateChrVec <- as.character(dateVec); lenTs <- length(dateVec)
+  dfPlotTs$date_chr <- as.character(dfPlotTs$date)
+  dfPlotMod$date <- dateVec; dfPlotMod$date_chr <- dateChrVec
+  my_breaks <- dateChrVec[seq.int(1, lenTs, length.out = 30)]
+  dfPlotMod <- dfPlotMod %>% gather_("symbol", "tsMod", symbVec)
+  #dfPlotMod$date_chr <- as.factor(dfPlotMod$date_chr)
   
-  n_types_fit <- length(unique(df_plot_ts_dtFit$Type))
-  #n_types_ts <- length(unique(df_plot_ts$Type))
-  #distinct_colors <- randomcoloR::distinctColorPalette(k = n_types_fit + n_types_ts)
-  distinct_colors <- randomcoloR::distinctColorPalette(k = 4 * n_types_fit)
-  colors_dtFit <- distinct_colors[1:n_types_fit]
-  #colors_ts <- distinct_colors[(n_types_fit + 1):(n_types_fit + n_types_ts)]
-  
-  df_plot_ts_dtFit$date_chr <- as.factor(as.character(df_plot_ts_dtFit$date))
-  #df_plot_dt <- subset(df_plot_ts_dtFit, Type == "slope")
-  df_plot_dt <- subset(df_plot_ts_dtFit, Type == "pctlOsc")
-  df_plot_dtFit <- subset(df_plot_ts_dtFit, Type == "yhat")
-  
-  gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_dtFit, aes(x = date_chr, y = Value, color = Type, group = 1), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-  gg <- gg + geom_line(data = df_plot_dt, aes(x = date_chr, y = Value, color = Type, group = 1))#, color = colors_dtFit[1])
-  gg <- gg + scale_color_manual(values = colors_dtFit)
-  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
-  gg <- gg + geom_vline(aes(xintercept = ind_divide), lwd = 1, color = "violet")
-  gg <- gg + theme_bw()
-  gg <- gg + scale_x_discrete(breaks = my_breaks)
-  gg <- gg + theme(axis.title = element_blank(),
-                   legend.title = element_blank(),
-                   axis.text.x = element_text(angle = 60, hjust = 1))
-  #gg <- gg + scale_color_brewer(palette = "Dark2")
-  gg_dtFit <- gg
-  
-  # df_plot_ts$date_chr <- as.factor(df_plot_ts$date_chr)
-  # df_plot_yhat_p <- subset(df_plot_ts, Type == "yhat_p")
-  # df_plot_p_ema <- subset(df_plot_ts, Type != "yhat_p")
+  if(plotSeparate){
+    gg <- ggplot()
+    gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
+    gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = symbol, group = symbol))#, color = colors_dtFit[2], lwd = 1.1)
+    gg <- gg + scale_color_manual(values = theseColors)
+#    gg <- gg + theme(legend.position = "none")
+    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+    gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = symbol, group = symbol), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+    gg <- gg + scale_color_manual(values = theseColors)
+    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+    gg <- gg + geom_vline(xintercept = ind_divide, lwd = 1, color = "blue")
+    gg <- gg + theme_bw()
+    gg <- gg + scale_x_discrete(breaks = my_breaks)
+    gg <- gg + theme(axis.title = element_blank(),
+                     #legend.title = element_blank(),
+                     legend.position = "none",
+                     axis.text.x = element_text(angle = 60, hjust = 1))
+    gg
+  }
   # gg <- ggplot()
-  # gg <- gg + geom_line(data = df_plot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
+  # gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = Type, group = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  # gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = Type, group = Type))#, color = colors_dtFit[1])
+  # gg <- gg + scale_color_manual(values = colors_dtFit)
+  # gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
+  # gg <- gg + geom_vline(aes(xintercept = ind_divide), lwd = 1, color = "violet")
+  # gg <- gg + theme_bw()
+  # gg <- gg + scale_x_discrete(breaks = my_breaks)
+  # gg <- gg + theme(axis.title = element_blank(),
+  #                  legend.title = element_blank(),
+  #                  axis.text.x = element_text(angle = 60, hjust = 1))
+  # gg_dtFit <- gg
+  
+  # dfPlot_ts$date_chr <- as.factor(dfPlot_ts$date_chr)
+  # dfPlot_yhat_p <- subset(dfPlot_ts, Type == "yhat_p")
+  # dfPlot_p_ema <- subset(dfPlot_ts, Type != "yhat_p")
+  # gg <- ggplot()
+  # gg <- gg + geom_line(data = dfPlot_p_ema, aes(x = date_chr, y = Value, group = Type, color = Type))
   # gg <- gg + scale_color_manual(values = colors_ts[1:2])
-  # gg <- gg + geom_line(data = df_plot_yhat_p, aes(x = date_chr, y = Value, group = 1), color = colors_ts[3], lwd = 1.1)
+  # gg <- gg + geom_line(data = dfPlot_yhat_p, aes(x = date_chr, y = Value, group = 1), color = colors_ts[3], lwd = 1.1)
   # gg <- gg + geom_vline(aes(xintercept = ind_divide), color = "violet", lwd = 1)
   # gg <- gg + theme_bw()
   # gg <- gg + scale_x_discrete(breaks = my_breaks)
@@ -304,13 +304,18 @@ plot_validation <- function(yhat, ypredict, df_wave){
   print(gg_dtFit)
 }
 #========================================================================
-plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21){
-  ind_end <- nrow(df_wave)
-  #df_plot <- df_wave[, c("date", "date_chr", "slope")]
-  df_plot <- df_wave[, c("date", "date_chr", "pctlOsc")]
-  df_plot$yhat <- yhat
-  df_plot$set <- "fit"
-  df_plot$t <- NULL
+plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21){
+  symbVec <- unique(dfTs$symbol)
+  nTs <- ncol(dfYhat)
+  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+  theseColors <- sample(bag_of_colors, nTs)
+  ind_end <- nrow(dfYhat)
+  symbVec <- colnames(dfYhat)
+  dateVec <- subset(dfPlotTs, symbol == symbVec[1])$date; dateChrVec <- as.character(dateVec); lenTs <- length(dateVec)
+  dfPlotMod <- dfYhat
+  dfPlotMod$date_chr <- dateChrVec
+  dfPlotMod$set <- "fit"
+  #dfPlot$t <- NULL
   #---------------------------------------
   time_step_unit <- as.character(stringr::str_extract_all(time_step, "[a-z]+")[[1]])
   if(time_step_unit == "min"){
@@ -326,8 +331,8 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
     time_step_num <- 1
   }
   # #---------------------------------------
-  # future_start <- df_plot$date[nrow(df_plot)] + time_step_num
-  # future_stop <- df_plot$date[nrow(df_plot)] + 2 * time_step_num * n_lookAhead
+  # future_start <- dfPlot$date[nrow(dfPlot)] + time_step_num
+  # future_stop <- dfPlot$date[nrow(dfPlot)] + 2 * time_step_num * n_lookAhead
   # date_fut <- seq(future_start, future_stop, by = time_step_num)
   # date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
   # date_fut <- date_fut[1:n_lookAhead]
@@ -347,35 +352,33 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   }
   
   date_fut_chr <- as.character(paste("+", date_fut, time_step_unit))
-  #---------------------------------------
+  #----------------------------------------------------------------------
   #  df_add <- data.frame(date = date_fut, date_chr = date_fut_chr, slope = NA, yhat = ypredict[, 1], set = "predict")
   #df_add <- data.frame(date_chr = date_fut_chr, slope = NA, yhat = ypredict[, 1], set = "predict")
-  df_add <- data.frame(date_chr = date_fut_chr, pctlOsc = NA, yhat = ypredict[, 1], set = "predict")
-  df_plot$date <- NULL
-  df_plot <- rbind(df_plot, df_add)
-  df_plot$date_chr <- factor(df_plot$date_chr, levels = df_plot$date_chr)
-  my_breaks <- df_plot$date_chr[seq.int(1, length(df_plot$date_chr), length.out = 30)]
-  n <- 30
-  distinct_colors <- randomcoloR::distinctColorPalette(k = n)
-  colors_dtFit <- distinct_colors[sample(1:n, 2)]
-  # df_plot_dt <- subset(df_plot, Type == "slope")
-  # df_plot_dtFit <- subset(df_plot, Type == "yhat")
+  dfAdd <- dfYpred
+  dfAdd$date_chr <- date_fut_chr; dfAdd$set <- "predict"
+  dfPlotMod <- as.data.frame(rbind(dfPlotMod, dfAdd))
+  dateChrVec <- dfPlotMod$date_chr; lenTs <- length(dateChrVec)
+  my_breaks <- dateChrVec[seq.int(1, lenTs, length.out = 30)]
+  dfPlotMod$date_chr <- factor(dfPlotMod$date_chr, levels = dfPlotMod$date_chr)
+  dfPlotMod <- dfPlotMod %>% gather_("symbol", "tsMod", symbVec)
   this_title <- paste(c(paste(time_step, "chart")),
                         #paste(per_ema_for_detrend, "step detrend")),
-                      collapse = ", ")  
+                      collapse = ", ")
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
-  # gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = slope, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_line(data = df_plot, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
-  gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
+  gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
+  gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, group = symbol, color = symbol))
+  gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, group = symbol, color = symbol))
+  gg <- gg + scale_color_manual(values = theseColors)
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
+  gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
   gg <- gg + labs(title = this_title)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
-                   legend.title = element_blank(),
-                   #legend.position = "top",
+                   #legend.title = element_blank(),
+                   legend.position = "none",
                    axis.ticks.x = element_blank(),
                    plot.title = element_text(size = 10))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
@@ -384,21 +387,29 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   
   # Zoom in
   ind_end_new <- n_lookBack_zoom
-  df_plot_zoom <- df_plot[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom), ]
-  my_breaks_zoom <- df_plot_zoom$date_chr[seq.int(1, length(df_plot_zoom$date_chr), length.out = 30)]
+  dateChrZoomVec <- dateChrVec[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom)]
+  lenTsZoom <- length(dateChrZoomVec)
+  dfPlotModZoom <- dfPlotMod %>% mutate(date_chr = as.character(date_chr)) %>%
+    subset(date_chr %in% dateChrZoomVec)
+  dfPlotTsZoom <- dfPlotTs %>% subset(date_chr >= dateChrZoomVec[1])
+  my_breaks_zoom <- dateChrZoomVec[seq.int(1, lenTsZoom, length.out = 30)]
+  dfPlotModZoom <- dfPlotModZoom %>% spread(symbol, tsMod) %>%
+    mutate(date_chr = factor(date_chr, levels = dateChrZoomVec)) %>%
+    gather_("symbol", "tsMod", symbVec)
   gg <- ggplot()
-  gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = yhat, group = 1), color = colors_dtFit[1], lwd = 1.1)
-  # gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = slope, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_line(data = df_plot_zoom, aes(x = date_chr, y = pctlOsc, group = 1), color = colors_dtFit[2])
-  gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
-  gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
   gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
+  gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
+  gg <- gg + geom_line(data = dfPlotModZoom, aes(x = date_chr, y = tsMod, group = symbol, color = symbol))#, color = colors_dtFit[1], lwd = 1.1)
+  gg <- gg + geom_line(data = dfPlotTsZoom, aes(x = date_chr, y = ts, group = symbol, color = symbol))#, color = colors_dtFit[2])
+  gg <- gg + scale_color_manual(values = theseColors)
+  gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
+  gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
   gg <- gg + labs(title = paste(this_title, "close up"))
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
-                   legend.title = element_blank(),
-                   #legend.position = "top",
+                   #legend.title = element_blank(),
+                   legend.position = "none",
                    axis.ticks.x = element_blank(),
                    plot.title = element_text(size = 10))
   #gg <- gg + scale_color_brewer(palette = "Dark2")
@@ -406,7 +417,7 @@ plot_prediction <- function(yhat, ypredict, df_wave, time_step, n_lookAhead = 34
   
 }
 #========================================================================
-get_cycles <- function(waveAnalysis){
+getCycles <- function(waveAnalysis, plotPeriodogram = T){
   df_periodogram <- data.frame(period = waveAnalysis$Period, power = waveAnalysis$Power.avg)
   ind_critPoints <- findPeaks(df_periodogram$power)
   critPers <- df_periodogram$period[ind_critPoints]
@@ -419,23 +430,25 @@ get_cycles <- function(waveAnalysis){
   }else{
     df_plot <- df_periodogram
   }
-  gg <- ggplot(df_plot, aes(x = period, y = power))
-  gg <- gg + geom_line()
-  gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
-  gg <- gg + theme_bw()
-  print(gg)
+  if(plotPeriodogram){
+    gg <- ggplot(df_plot, aes(x = period, y = power))
+    gg <- gg + geom_line()
+    gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
+    gg <- gg + theme_bw()
+    print(gg)
+  }
   #-------------------
   # Get periods, ordered from most power to least
   critPwrs <- df_periodogram$power[ind_critPoints]
   ind_order <- order(critPwrs, decreasing = T)
   per_vec <- critPers[ind_order]
   pwr_vec <- critPwrs[ind_order]
-  df_mainCycles <- data.frame(Num = c(1:length(per_vec)), Period = per_vec, Power = pwr_vec)
+  dfMainCycles <- data.frame(Num = c(1:length(per_vec)), Period = per_vec, Power = pwr_vec)
   #-------------------
-  return(df_mainCycles)
+  return(dfMainCycles)
   
 }
-#========================================================================
+#=============================================================================
 #=============================================================================
 #=============================================================================
 # End function definition
@@ -548,7 +561,7 @@ mat_Lrot <- varimax(mat_L)[[1]]
 pctExplnd <- cumsum(eigVals) / sum(eigVals)
 cutOff1 <- which(pctExplnd >= 0.80)[1]
 #cutOff2 <- which(colMeans(abs(mat_Lrot)) > 0.15)
-cutOff2 <- which(eigVals / sum(eigVals) < 0.05)[1]
+cutOff2 <- which(eigVals / sum(eigVals) < 0.06)[1]
 cutOff <- min(max(cutOff1), max(cutOff2))
 #if(cutOff > 7){cutOff <- 7}
 #cutOff <- 7
@@ -630,81 +643,113 @@ this_period_label <- "period (days)"
 #   dj <- 1 / 250
 #   this_period_label <- "period (days)"
 # }
-i <- 3
-df_wave <- dfS %>% subset(PC == i)
-df_wave$date_chr <- as.character(df_wave$date)
-#df_wave <- df[-c(1:(rollWind + 1)), c("date", "date_chr", "p", "ema", "pctlOsc")]
-#------------------------------------------------------------------------
-waveAnalysis <- analyze.wavelet(df_wave, "pctlOsc",
-                                # waveAnalysis <- analyze.wavelet(df_wave, "slope",
-                                loess.span = 0,
-                                slope, #slope = time_step_num / 60 #if time_unit=min
-                                dj,
-                                lowerPeriod,
-                                upperPeriod, 
-                                make.pval = TRUE, n.sim = 10,
-                                verbose = F)
-#------------------------------------------------------------
-# Plot beautiful waveComp analysis
-# wt.image(waveAnalysis, n.levels = 250, periodlab = "period (active minutes)",legend.params = list(lab = "wavelet power levels"), spec.time.axis = list(at = ind, labels = df_wave$date[ind]))
-wtImage <- wt.image(waveAnalysis, n.levels = 250, periodlab = this_period_label, legend.params = list(lab = "wavelet power levels", mar = 4.7))
-# my.rec <- reconstruct(my.w)
-# x.rec <- my.rec$series$x.r  # x: name of original series
-#------------------------------------------------------------
-# Get periods and plot periodogram
-df_mainCycles <- get_cycles(waveAnalysis)
-kable(round(df_mainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-#------------------------------------------------------------
-# Get validate (backtest) info
-n_backtest = round(backtest_fraction * nrow(df_wave))
-ind_fit <- 1:(nrow(df_wave) - n_backtest)
-ind_test <- setdiff(1:nrow(df_wave), ind_fit)
-#ts <- df_wave$slope[ind_fit]
-ts <- df_wave$pctlOsc[ind_fit]
-per_vec <- df_mainCycles$Period #if daily
-# if(time_step_unit == "min"){
-#   per_vec <- df_mainCycles$Period * 60 / time_step_num
-# }else{
-#   per_vec <- df_mainCycles$Period
-# }
-if(!is.null(power_threshold)){
-  # Keep only periods above a certain power threshold
-  power_threshold_input <- power_threshold
-  power_threshold_str <- paste(as.character(stringr::str_extract_all(power_threshold, "[a-z]+")[[1]]), collapse = " ")
-  if(power_threshold_str == "drop lowest"){
-    power_threshold <- min(df_mainCycles$Power)
+listPCwaves <- list()
+listPCwtImages <- list()
+listDfMainCycles <- list()
+listYhatValid <- list()
+listYpredValid <- list()
+listYhatPred <- list()
+listYpredPred <- list()
+tsLength <- nrow(df_pca)
+n_backtest = round(backtest_fraction * tsLength)
+ind_fit <- 1:(tsLength - n_backtest)
+ind_test <- setdiff(1:tsLength, ind_fit)
+n_lookAhead <- round(lookAhead_fraction * tsLength)
+dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts");dfTs$symbol <- paste("PC", dfTs$symbol)
+symbVec <- unique(dfTs$symbol)
+for(i in 1:cutOff){
+  df_wave <- dfTs %>% subset(symbol == symbVec[i])
+  #------------------------------------------------------------------------
+  waveAnalysis <- analyze.wavelet(df_wave, "ts",
+                                  loess.span = 0,
+                                  slope, #slope = time_step_num / 60 #if time_unit=min
+                                  dj,
+                                  lowerPeriod,
+                                  upperPeriod, 
+                                  make.pval = TRUE, n.sim = 10,
+                                  verbose = F)
+  listPCwaves[[i]] <- waveAnalysis
+  #------------------------------------------------------------
+  # Plot beautiful waveComp analysis
+  # wt.image(waveAnalysis, n.levels = 250, periodlab = "period (active minutes)",legend.params = list(lab = "wavelet power levels"), spec.time.axis = list(at = ind, labels = df_wave$date[ind]))
+  wtImage <- wt.image(waveAnalysis, n.levels = 250, periodlab = this_period_label, legend.params = list(lab = "wavelet power levels", mar = 4.7))
+  # my.rec <- reconstruct(my.w)
+  # x.rec <- my.rec$series$x.r  # x: name of original series
+  listPCwtImages[[i]] <- wtImage
+  #------------------------------------------------------------
+  # Get periods and plot periodogram
+  dfMainCycles <- getCycles(waveAnalysis, plotPeriodogram = F)
+  dfMainCycles$symbol <- thisSymb
+  listDfMainCycles[[i]] <- dfMainCycles
+  #kable(round(dfMainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+  #------------------------------------------------------------
+  # Get info necessary for wave model validation (backtest)
+  tsFit <- df_wave$ts[ind_fit]
+  per_vec <- dfMainCycles$Period #if daily
+  # if(time_step_unit == "min"){
+  #   per_vec <- df_mainCycles$Period * 60 / time_step_num
+  # }else{
+  #   per_vec <- df_mainCycles$Period
+  # }
+  if(!is.null(power_threshold)){
+    # Keep only periods above a certain power threshold
+    power_threshold_input <- power_threshold
+    power_threshold_str <- paste(as.character(stringr::str_extract_all(power_threshold, "[a-z]+")[[1]]), collapse = " ")
+    if(power_threshold_str == "drop lowest"){
+      power_threshold <- min(dfMainCycles$Power)
+    }
+    if(power_threshold_str == "percentile log"){
+      power_threshold_num <- as.numeric(stringr::str_extract_all(power_threshold, "[0-9.]+")[[1]])
+      x <- quantile(log(dfMainCycles$Power), power_threshold_num)
+      power_threshold <- exp(x)
+    }
+    ind_keep <- which(dfMainCycles$Power > power_threshold)
+    per_vec <- per_vec[ind_keep]
+    
   }
-  if(power_threshold_str == "percentile log"){
-    power_threshold_num <- as.numeric(stringr::str_extract_all(power_threshold, "[0-9.]+")[[1]])
-    x <- quantile(log(df_mainCycles$Power), power_threshold_num)
-    power_threshold <- exp(x)
-  }
-  ind_keep <- which(df_mainCycles$Power > power_threshold)
-  per_vec <- per_vec[ind_keep]
-  
+  out_fitWave <- fitWave(tsFit, per_vec, pval_thresh = 0.01, n_backtest)
+  yhat_validate <- out_fitWave[[1]]
+  ypredict_validate <- out_fitWave[[2]]; ypredict_validate <- ypredict_validate[, 1]
+  listYhatValid[[i]] <- yhat_validate
+  listYpredValid[[i]] <- ypredict_validate
+  #------------------------------------------------------------
+  # Get info necessary for wave model prediction
+  ts <- df_wave$ts
+  out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_lookAhead)
+  yhat_pred <- out_fitWave[[1]]
+  ypredict_pred <- out_fitWave[[2]]; ypredict_pred <- ypredict_pred[, 1]
+  summod <- out_fitWave[[3]]
+  #kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+  listYhatPred[[i]] <- yhat_pred
+  listYpredPred[[i]] <- ypredict_pred
+
 }
-out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_backtest)
-yhat_validate <- out_fitWave[[1]]
-ypredict_validate <- out_fitWave[[2]]
 #------------------------------------------------------------
-# Get predict info
-#ts <- df_wave$slope
-ts <- df_wave$pctlOsc
-n_lookAhead <- round(lookAhead_fraction * length(ts))
-out_fitWave <- fitWave(ts, per_vec, pval_thresh = 0.01, n_lookAhead)
-yhat_pred <- out_fitWave[[1]]
-ypredict_pred <- out_fitWave[[2]]
-summod <- out_fitWave[[3]]
-kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+dfYhatValid <- as.data.frame(do.call(cbind, listYhatValid))
+dfYpredValid <- as.data.frame(do.call(cbind, listYpredValid))
+dfYhatPred <- as.data.frame(do.call(cbind, listYhatPred))
+dfYpredPred <- as.data.frame(do.call(cbind, listYpredPred))
+colnames(dfYhatValid) <- symbVec; colnames(dfYpredValid) <- symbVec
+colnames(dfYhatPred) <- symbVec; colnames(dfYpredPred) <- symbVec
 #------------------------------------------------------------
 # Backtest
-plot_validation(yhat_validate, ypredict_validate, df_wave)
+plot_validation(dfYhatValid, dfYpredValid, dfTs)
 #------------------------------------------------------------
 # Prediction
 n_lookAhead_zoom <- n_lookAhead
 n_lookBack_zoom <- round(lookBack_fraction * nrow(df_wave))
 time_step <- "daily"
 plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom)
+# Periodograms
+gg <- ggplot(df_plot, aes(x = period, y = power))
+gg <- gg + geom_line()
+gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
+gg <- gg + theme_bw()
+print(gg)
+
+#==============================================================
+
+#==============================================================
 #==============================================================
 #==============================================================
 #==============================================================
