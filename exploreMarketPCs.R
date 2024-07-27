@@ -236,11 +236,15 @@ fitWave <- function(ts, per_vec, pval_thresh = 0.01, n_lookAhead){
   return(list_out)
 }
 #========================================================================
-plot_validation <- function(dfYhat, dfYpred, dfPlotTs, plotSeparate = T){
+plot_validation <- function(dfYhat, dfYpred, dfPlotTs, colorVec = NULL){
   symbVec <- unique(dfTs$symbol)
   nTs <- ncol(dfYhat)
-  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
-  theseColors <- sample(bag_of_colors, nTs)
+  if(is.null(colorVec)){
+    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+    theseColors <- sample(bag_of_colors, nTs)
+  }else{
+    theseColors <- colorVec
+  }
   ind_divide <- nrow(dfYhat)
   dfPlotMod <- as.data.frame(rbind(dfYhat, dfYpred))
   dateVec <- subset(dfPlotTs, symbol == symbVec[1])$date; dateChrVec <- as.character(dateVec); lenTs <- length(dateVec)
@@ -249,26 +253,23 @@ plot_validation <- function(dfYhat, dfYpred, dfPlotTs, plotSeparate = T){
   my_breaks <- dateChrVec[seq.int(1, lenTs, length.out = 30)]
   dfPlotMod <- dfPlotMod %>% gather_("symbol", "tsMod", symbVec)
   #dfPlotMod$date_chr <- as.factor(dfPlotMod$date_chr)
-  
-  if(plotSeparate){
+  thisTitle <- "Model validation"
     gg <- ggplot()
     gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
+    gg <- gg + geom_vline(xintercept = ind_divide, lwd = 1, color = "blue")
     gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = symbol, group = symbol))#, color = colors_dtFit[2], lwd = 1.1)
-    gg <- gg + scale_color_manual(values = theseColors)
-#    gg <- gg + theme(legend.position = "none")
-    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
     gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = symbol, group = symbol), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
     gg <- gg + scale_color_manual(values = theseColors)
-    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
-    gg <- gg + geom_vline(xintercept = ind_divide, lwd = 1, color = "blue")
-    gg <- gg + theme_bw()
     gg <- gg + scale_x_discrete(breaks = my_breaks)
+    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+    gg <- gg + labs(title = thisTitle)
+    gg <- gg + theme_bw()
     gg <- gg + theme(axis.title = element_blank(),
                      #legend.title = element_blank(),
                      legend.position = "none",
-                     axis.text.x = element_text(angle = 60, hjust = 1))
-    gg
-  }
+                     axis.text.x = element_text(angle = 60, hjust = 1),
+                     plot.title = element_text(size = 10))
+  print(gg)
   # gg <- ggplot()
   # gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = Type, group = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
   # gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = Type, group = Type))#, color = colors_dtFit[1])
@@ -301,16 +302,19 @@ plot_validation <- function(dfYhat, dfYpred, dfPlotTs, plotSeparate = T){
   # gg_together <- gg_dtFit + gg_ts + plot_layout(ncol = 1, heights = c(2, 1))
   
   # print(gg_together)
-  print(gg_dtFit)
 }
 #========================================================================
-plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21){
-  symbVec <- unique(dfTs$symbol)
+plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 34, n_lookAhead_zoom = 21, n_lookBack_zoom = 21,
+                            colorVec = NULL, showCloseUp = F){
+  symbVec <- unique(dfPlotTs$symbol)
   nTs <- ncol(dfYhat)
-  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
-  theseColors <- sample(bag_of_colors, nTs)
+  if(is.null(colorVec)){
+    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+    theseColors <- sample(bag_of_colors, nTs)
+  }else{
+    theseColors <- colorVec
+  }
   ind_end <- nrow(dfYhat)
-  symbVec <- colnames(dfYhat)
   dateVec <- subset(dfPlotTs, symbol == symbVec[1])$date; dateChrVec <- as.character(dateVec); lenTs <- length(dateVec)
   dfPlotMod <- dfYhat
   dfPlotMod$date_chr <- dateChrVec
@@ -331,12 +335,6 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
     time_step_num <- 1
   }
   # #---------------------------------------
-  # future_start <- dfPlot$date[nrow(dfPlot)] + time_step_num
-  # future_stop <- dfPlot$date[nrow(dfPlot)] + 2 * time_step_num * n_lookAhead
-  # date_fut <- seq(future_start, future_stop, by = time_step_num)
-  # date_fut <- date_fut[!weekdays(date_fut) %in% c('Saturday','Sunday')]
-  # date_fut <- date_fut[1:n_lookAhead]
-  # date_fut_chr <- as.character(date_fut)
   date_fut <- 1:n_lookAhead * time_step_num
   if(time_step_unit == "min"){
     date_fut <- round(date_fut / 60, 2)
@@ -350,7 +348,6 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   if(time_step_unit == "daily"){
     time_step_unit <- "days"
   }
-  
   date_fut_chr <- as.character(paste("+", date_fut, time_step_unit))
   #----------------------------------------------------------------------
   #  df_add <- data.frame(date = date_fut, date_chr = date_fut_chr, slope = NA, yhat = ypredict[, 1], set = "predict")
@@ -360,20 +357,22 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   dfPlotMod <- as.data.frame(rbind(dfPlotMod, dfAdd))
   dateChrVec <- dfPlotMod$date_chr; lenTs <- length(dateChrVec)
   my_breaks <- dateChrVec[seq.int(1, lenTs, length.out = 30)]
-  dfPlotMod$date_chr <- factor(dfPlotMod$date_chr, levels = dfPlotMod$date_chr)
+  dfPlotMod$date_chr <- factor(dfPlotMod$date_chr, levels = dateChrVec)
   dfPlotMod <- dfPlotMod %>% gather_("symbol", "tsMod", symbVec)
-  this_title <- paste(c(paste(time_step, "chart")),
-                        #paste(per_ema_for_detrend, "step detrend")),
-                      collapse = ", ")
+  dfPlotTs$date_chr <- as.character(dfPlotTs$date)
+  # this_title <- paste(c(paste(time_step, "chart")),
+  #                       #paste(per_ema_for_detrend, "step detrend")),
+  #                     collapse = ", ")
+  thisTitle <- "Model prediction"
   gg <- ggplot()
   gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
   gg <- gg + geom_vline(xintercept = ind_end, color = "blue", size = 1)
-  gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, group = symbol, color = symbol))
+  gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, group = symbol, color = symbol), lwd = 1.1)
   gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, group = symbol, color = symbol))
   gg <- gg + scale_color_manual(values = theseColors)
   gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
-  gg <- gg + labs(title = this_title)
+  gg <- gg + labs(title = thisTitle)
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
@@ -384,7 +383,7 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   #gg <- gg + scale_color_brewer(palette = "Dark2")
   print(gg)
   
-  
+  if(showCloseUp){
   # Zoom in
   ind_end_new <- n_lookBack_zoom
   dateChrZoomVec <- dateChrVec[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom)]
@@ -404,16 +403,17 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   gg <- gg + scale_color_manual(values = theseColors)
   gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
   gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
-  gg <- gg + labs(title = paste(this_title, "close up"))
+  gg <- gg + labs(title = paste(thisTitle, "close up"))
   gg <- gg + theme_bw()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
-                   #legend.title = element_blank(),
                    legend.position = "none",
                    axis.ticks.x = element_blank(),
                    plot.title = element_text(size = 10))
-  #gg <- gg + scale_color_brewer(palette = "Dark2")
+  
   print(gg)
+  }
+  
   
 }
 #========================================================================
@@ -445,7 +445,7 @@ getCycles <- function(waveAnalysis, plotPeriodogram = T){
   pwr_vec <- critPwrs[ind_order]
   dfMainCycles <- data.frame(Num = c(1:length(per_vec)), Period = per_vec, Power = pwr_vec)
   #-------------------
-  return(dfMainCycles)
+  return(list(dfMainCycles, df_plot))
   
 }
 #=============================================================================
@@ -454,12 +454,62 @@ getCycles <- function(waveAnalysis, plotPeriodogram = T){
 # End function definition
 #=============================================================================
 #=============================================================================
+# Manual global overview
+spy_sector_symbs <- c("XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
+                      "XLU", "XLI", "XBI", "IYT") #"TTEK"
+spy_sector_detail <- c("Financials", "Communications", "Luxury goods", "Consumer\ngoods",
+                       "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
+                       "Biotechnology", "Transportation") #"Gov. foreign aid"
+minerals_symbs <- c("GLD", "SLV", "PPLT", "CPER", "DBB") #"XME"
+minerals_detail <- c("Gold", "Silver", "Platinum", "Copper", "Industrial metals") #"US metals and mining"
+agriculture_symbs <- c("WEAT", "CORN", "KROP", "SOYB", "CANE", "DBA", "TAGS")
+agriculture_detail <- c("Wheat", "Maize", "AgTech", "Soybean", "Sugar", "General Ag 1", "General Ag 2")
+energy_symbs <- c("WTI", "BNO", "WOOD", "ICLN", "UNG")
+energy_detail <- c("Oil (W&T)", "Oil (Brent)", "Timber", "Clean energy", "US natural gas")
+currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
+currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
+# currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
+#                     "GBPUSD=X", "AUDUSD=X", "INR=X")
+# currency_detail <- c("EUR/USD", "USD/JPY",
+#                      "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
+emerg_mkt_symbs <- c("ELD", "BKF", "VWOB")
+emerg_mkt_detail <- c("Emerg mkts debt", "BRIC countries", "Emerg mkts gov. bonds")
+crypto_symbs <- c("BLOK", "LEGR", "BITQ")
+crypto_detail <- c("Blockchain tech.", "Blockchain companies", "Crypto Industry Innovators")
+Tbond_symbs <- c("IEI", "IEF", "TLT")#, "BIL"
+Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs") #"T-bond 1-3 months"
+
+ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+ts_detail_vec <- c(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
+                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+listGroups <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+                     currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+groupNames <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currencies",
+                 "Emerging Markets", "Crypto", "T-Bonds")
+names(listGroups) <- groupNames
+nGroups <- length(listGroups)
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
+groupColors <- sample(bag_of_colors, n_groups)
+groupInfo <- list(listGroups, groupNames, groupColors)
+dfAvail <- data.frame(Ticker = ts_symb_vec, Name = ts_detail_vec)
+dfAvail$Sector <- NA;
+for(i in 1:nGroups){
+  dfAvail$Sector[which(dfAvail$Ticker %in% listGroups[[i]])] <- names(listGroups)[i]
+}
+stkVec <- dfAvail$Ticker
+fromdate <- Sys.Date() - 1000
+#=============================================================================
+#=============================================================================
+#=============================================================================
+#=============================================================================
+# Or use stock scanner
 # Tiingo has good free stock screener with option to export to csv:
 # https://app.tiingo.com/screener/overview
 #workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
 workFolder <- "/home/ben/Documents/finAnalysis/"
 #thisFile <-"soundFundmntls.csv"
-thisFile <-"overLeveraged.csv"
+thisFile <-"LargeCap.csv"
 thisFilepath <- paste0(workFolder, thisFile)
 #list.files(workFolder)
 dfThese <- read.csv(thisFilepath, stringsAsFactors = F) #Tiingo screener
@@ -471,17 +521,11 @@ dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
                                 exchange %in% theseExchngs & 
-                                endDate == (Sys.Date() - 0))
-#unique(dfAvailRaw$exchange)
-#theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
-# dfAvail <- dfAvailRaw %>% subset(exchange %in% theseExchngs &
-#                                    startDate < "2019-01-01" &
-#                                    endDate == (Sys.Date() - 1) &
-#                                    ticker %in% theseStks)
+                                endDate == (Sys.Date() - 1))
 allStks <- unique(dfAvail$Ticker)
 length(allStks)
 #allStks <- allStks[-which(allStks == "AHL-P-C")]
-fromdate <- Sys.Date() - round(length(allStks) * 12)
+fromdate <- Sys.Date() - round(length(allStks) * 2)
 stkVec <- allStks
 #=============================================================================
 # Sort out sector info, especially for graphing purposes
@@ -490,10 +534,6 @@ dfAvail$Sector[grep("Materials", dfAvail$Sector)] <- "Materials"
 dfAvail$Sector[grep("Tech", dfAvail$Sector)] <- "Technology"
 dfAvail$Sector[grep("Unknown", dfAvail$Sector)] <- "Unknown"
 sctrVec <- unique(dfAvail$Sector)
-# list_groups <- list(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
-#                     currency_detail, emerg_mkt_detail, Tbond_detail) #crypto_detail,
-# group_names <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currency Pairs",
-#                  "Emerging Markets", "T-Bonds") #"Cryptocurrencies/\nBlockchain"
 listGroups <- list()
 for(i in 1:length(sctrVec)){
   listGroups[[sctrVec[i]]] <- dfAvail[, c("Ticker", "Sector")] %>%
@@ -501,9 +541,6 @@ for(i in 1:length(sctrVec)){
 }
 groupNames <- sctrVec
 n_groups <- length(listGroups)
-#group_colors <- RColorBrewer::brewer.pal(n = n_groups, "Dark2")
-# "Darjeeling"
-# group_colors <- wesanderson::wes_palette("Darjeeling1", n = n_groups, type = "continuous")
 bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
 groupColors <- sample(bag_of_colors, n_groups)
 groupInfo <- list(listGroups, groupNames, groupColors)
@@ -517,11 +554,12 @@ groupInfo <- list(listGroups, groupNames, groupColors)
 # Download price series
 df_ohlcv  <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
 length(unique(df_ohlcv$symbol))
-o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
+o <- apply(df_ohlcv, 2, function(x) sum(is.na(x))); o
+unique(df_ohlcv$symbol[which(is.na(df_ohlcv$low))])
 df_ohlcv$p <- df_ohlcv$adjusted
 # dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
 # o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
-df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
+#df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
 #o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
 # saveToFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
@@ -534,13 +572,13 @@ dfStk <- df_ohlcv[, c("symbol", "date", "p")]
 rollWind <- 89
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
-  mutate(pctlOsc = 2 * pctlOsc - 1) %>%
+  mutate(pctlOsc = 2 * pctlOsc - 1) %>% # For signal forcast/validation to work pctlOsc has to straddle y=0
   as.data.frame()
 dfx <- dfStk[, c("symbol", "date", "pctlOsc")] %>% spread(symbol, pctlOsc)
 o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o;table(o)
 max(o);which(o == max(o))
-dfStk <- dfStk %>% subset(symbol != "ARKO")
-dfStk <- dfStk %>% subset(symbol != "TECX")
+notThese <- c("ARKO", "TECX", "LTM")
+dfStk <- dfStk %>% subset(!(symbol %in% notThese))
 dfStk <- dfStk[-which(is.na(dfStk$pctlOsc)), c("symbol", "date", "pctlOsc")]
 o <- apply(dfStk, 2, function(x) length(which(is.na(x))));o
 #=============================================================================
@@ -561,10 +599,9 @@ mat_Lrot <- varimax(mat_L)[[1]]
 pctExplnd <- cumsum(eigVals) / sum(eigVals)
 cutOff1 <- which(pctExplnd >= 0.80)[1]
 #cutOff2 <- which(colMeans(abs(mat_Lrot)) > 0.15)
-cutOff2 <- which(eigVals / sum(eigVals) < 0.06)[1]
+cutOff2 <- which(eigVals / sum(eigVals) < 0.05)[1]
 cutOff <- min(max(cutOff1), max(cutOff2))
-#if(cutOff > 7){cutOff <- 7}
-#cutOff <- 7
+#cutOff <- 5
 pctExplndVec <- round(100 * eigVals[1:cutOff] / sum(eigVals), 2)
 mat_L <- mat_L[, 1:cutOff]
 mat_Lrot <- mat_Lrot[, 1:cutOff]
@@ -578,12 +615,12 @@ for(i in 1:cutOff){
   theseCorrs <- abs(mat_Lrot[, i])
   #ind <- which(theseCorrs > 0.6)
   ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.98))
-  dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
+  #dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
+  dfx <- dfAvail[, c("Ticker", "Name", "Sector")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
   listDrivers[[i]] <- dfx
 }
-dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers)) %>% merge(dfAvail) %>%
-  subset(Lcorr > 0.6)
+dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers)) %>% subset(abs(Lcorr) > 0.5) #merge(dfAvail) %>%
 dfHiLcorStks$PC <- as.integer(dfHiLcorStks$PC)
 #matSadj <- (mat_X_in %*% matP[, 1:cutOff] %*% diag(1 / sqrt(eigVals[1:cutOff]))) * 1 / 2
 #dfS <- matSadj %>% as.data.frame()
@@ -599,7 +636,7 @@ for(i in 1:cutOff){
   bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nStks)
   theseColors <- sample(bag_of_colors, nStks)
   dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ticker", "pctlOsc", theseHiCor)
-  dfPlotS <-dfS %>% subset(PC == i)
+  dfPlotS <- dfS %>% subset(PC == i)
   gg <- ggplot()
   gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red")
   gg <- gg + geom_line(data = dfPlotS, aes(x = date, y = pctlOsc), color = "grey", lwd = 1.3)
@@ -616,7 +653,8 @@ for(i in 1:cutOff){
 }
 wrap_plots(listGg, ncol = 1)
 #=======================================================================
-# Forecast
+# Fit cyclic forecast model
+# Validate and predict
 #-----------------------------------------------------------------------
 power_threshold <- "percentile log 0.1"#"drop lowest" #0.12
 #-----------------------------------------------------------------------
@@ -643,22 +681,50 @@ this_period_label <- "period (days)"
 #   dj <- 1 / 250
 #   this_period_label <- "period (days)"
 # }
-listPCwaves <- list()
-listPCwtImages <- list()
-listDfMainCycles <- list()
-listYhatValid <- list()
-listYpredValid <- list()
-listYhatPred <- list()
-listYpredPred <- list()
 tsLength <- nrow(df_pca)
 n_backtest = round(backtest_fraction * tsLength)
 ind_fit <- 1:(tsLength - n_backtest)
 ind_test <- setdiff(1:tsLength, ind_fit)
 n_lookAhead <- round(lookAhead_fraction * tsLength)
-dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts");dfTs$symbol <- paste("PC", dfTs$symbol)
+##=========================================================================
+# Start with look at all PCs (up to cutOff)
+dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC", dfTs$symbol)
+##=========================================================================
+# After identifying PCs of interest based on validation and prediction of them all,
+# look at position/movement of highly correlated securities relative to selected PCs
+PCfocus <- c(3)
+dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC", dfTs$symbol)
+dfTs <- dfTs %>% subset(symbol %in% paste("PC", PCfocus))
+dfTheseHiCor <- dfHiLcorStks[which(dfHiLcorStks$PC %in% PCfocus), c("Ticker", "PC")] %>%
+  rename(symbol = Ticker)
+theseHiCor <- dfTheseHiCor$symbol
+dfTsAdd <- df_pca[, c("date", theseHiCor)]
+if(length(theseHiCor) > 1){
+  dfTsAdd <- dfTsAdd %>% gather_("symbol", "ts", theseHiCor)
+  }else{
+    dfTsAdd$symbol <- theseHiCor; colnames(dfTsAdd)[2] <- "ts"
+    dfTsAdd <- dfTsAdd[, c("date", "symbol", "ts")]
+  }
+dfTsAdd <- dfTsAdd %>% merge(dfTheseHiCor) %>% rename(CorrWithPC = PC)
+dfTs$CorrWithPC <- gsub("PC ", "", dfTs$symbol) %>% as.integer()
+dfTs <- dfTs %>% rbind(dfTsAdd) %>% as.data.frame()
+ind <- setdiff(c(1:nrow(dfTs)), grep("PC", dfTs$symbol))
+dfTs$symbol[ind] <- paste(dfTs$symbol[ind], dfTs$CorrWithPC[ind])
+#=========================================================================
+# Fit model
 symbVec <- unique(dfTs$symbol)
-for(i in 1:cutOff){
-  df_wave <- dfTs %>% subset(symbol == symbVec[i])
+nTs <- length(symbVec)
+listPCwaves <- list()
+listPCwtImages <- list()
+listDfMainCycles <- list()
+listDfPeriodograms <- list()
+listYhatValid <- list()
+listYpredValid <- list()
+listYhatPred <- list()
+listYpredPred <- list()
+for(i in 1:nTs){
+  thisSymb <- symbVec[i]
+  df_wave <- dfTs %>% subset(symbol == thisSymb)
   #------------------------------------------------------------------------
   waveAnalysis <- analyze.wavelet(df_wave, "ts",
                                   loess.span = 0,
@@ -668,19 +734,21 @@ for(i in 1:cutOff){
                                   upperPeriod, 
                                   make.pval = TRUE, n.sim = 10,
                                   verbose = F)
-  listPCwaves[[i]] <- waveAnalysis
+  #listPCwaves[[i]] <- waveAnalysis
   #------------------------------------------------------------
   # Plot beautiful waveComp analysis
   # wt.image(waveAnalysis, n.levels = 250, periodlab = "period (active minutes)",legend.params = list(lab = "wavelet power levels"), spec.time.axis = list(at = ind, labels = df_wave$date[ind]))
   wtImage <- wt.image(waveAnalysis, n.levels = 250, periodlab = this_period_label, legend.params = list(lab = "wavelet power levels", mar = 4.7))
   # my.rec <- reconstruct(my.w)
   # x.rec <- my.rec$series$x.r  # x: name of original series
-  listPCwtImages[[i]] <- wtImage
+  #listPCwtImages[[i]] <- wtImage
   #------------------------------------------------------------
   # Get periods and plot periodogram
-  dfMainCycles <- getCycles(waveAnalysis, plotPeriodogram = F)
-  dfMainCycles$symbol <- thisSymb
+  listOut <- getCycles(waveAnalysis, plotPeriodogram = F)
+  dfMainCycles <- listOut[[1]]; dfMainCycles$symbol <- thisSymb
+  dfPeriodograms <- listOut[[2]]; dfPeriodograms$symbol <- thisSymb
   listDfMainCycles[[i]] <- dfMainCycles
+  listDfPeriodograms[[i]] <- dfPeriodograms
   #kable(round(dfMainCycles, 2)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
   #------------------------------------------------------------
   # Get info necessary for wave model validation (backtest)
@@ -732,23 +800,45 @@ dfYpredPred <- as.data.frame(do.call(cbind, listYpredPred))
 colnames(dfYhatValid) <- symbVec; colnames(dfYpredValid) <- symbVec
 colnames(dfYhatPred) <- symbVec; colnames(dfYpredPred) <- symbVec
 #------------------------------------------------------------
+# Display only ts with good validation
+dateVec <- dfTs$date; lenTs <- length(dateVec)
+lenTsValid <- nrow(dfYpredValid); dateVecValid <- dateVec[(lenTs - lenTsValid + 1):lenTs]
+symbValidScore <- dfYpredValid %>% mutate(date = dateVecValid) %>%
+  gather_("symbol", "tsPredValid", symbVec) %>%
+  merge(dfTs[, c("date", "symbol", "ts")]) %>%
+  group_by(symbol) %>% mutate(x = (ts - tsPredValid)^2) %>%
+  summarise(sse = sum(x)) %>% subset(sse < quantile(sse, probs = 0.5)) %>%
+  .$symbol;symbValidScore
+dfYhatValid <- dfYhatValid[, symbValidScore];dfYpredValid <- dfYpredValid[, symbValidScore]
+dfYhatPred <- dfYhatPred[, symbValidScore];dfYpredPred <- dfYpredPred[, symbValidScore]
+dfTs <- dfTs %>% subset(symbol %in% symbValidScore)
+nTs <- length(symbValidScore)
+#------------------------------------------------------------
 # Backtest
-plot_validation(dfYhatValid, dfYpredValid, dfTs)
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+theseColors <- sample(bag_of_colors, nTs)
+plot_validation(dfYhatValid, dfYpredValid, dfTs, colorVec = theseColors)
 #------------------------------------------------------------
 # Prediction
 n_lookAhead_zoom <- n_lookAhead
 n_lookBack_zoom <- round(lookBack_fraction * nrow(df_wave))
 time_step <- "daily"
-plot_prediction(yhat_pred, ypredict_pred, df_wave, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom)
+plot_prediction(dfYhatPred, dfYpredPred, dfTs, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom,
+                colorVec = theseColors, showCloseUp = F)
+#------------------------------------------------------------
+# Check fundamentals
+dfLook <- dfAvail %>% subset(Ticker %in% gsub(" .*", "", symbValidScore))
+View(dfLook)
+#------------------------------------------------------------
 # Periodograms
-gg <- ggplot(df_plot, aes(x = period, y = power))
+dfPeriodograms <- as.data.frame(do.call(rbind, listDfPeriodograms))
+gg <- ggplot(dfPeriodograms, aes(x = period, y = power))
 gg <- gg + geom_line()
-gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
+gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+#gg <- gg + geom_vline(xintercept = critPers, color = "cyan", size = 1.2)
 gg <- gg + theme_bw()
 print(gg)
-
 #==============================================================
-
 #==============================================================
 #==============================================================
 #==============================================================
