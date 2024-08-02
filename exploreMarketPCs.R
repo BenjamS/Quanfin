@@ -8,6 +8,7 @@ library(WaveletComp)
 library(kableExtra)
 library(xtable)
 library(flextable)
+library(randomcoloR)
 #=============================================================================
 # Define functions
 get_S_and_corrXS <- function(mat_X_in){
@@ -142,7 +143,7 @@ plot_corrXS_barchart <- function(mat_L, group_info = NULL, xAxis_title = NULL, s
                    legend.text = element_text(size = 7),
                    legend.key.size = unit(0.3, "cm"),
                    legend.position = "top",
-                   panel.background = element_blank(),
+                   panel.background = element_rect(fill = "black"),
                    strip.text = element_text(size = 7))
   gg <- gg + guides(fill = guide_legend(nrow = 2, byrow = T))
   #gg <- gg + coord_equal()
@@ -157,18 +158,18 @@ group_fn <- function(groupInfo){
   groupNames <- groupInfo[[2]]
   groupColors <- groupInfo[[3]]
   varNames_ordered <- do.call(c, listGroups)
-  n_groups <- length(groupNames)
+  nGroups <- length(groupNames)
   n_items <- length(varNames_ordered)
   if(is.null(groupColors)){
-    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
-    groupColors <- sample(bag_of_colors, n_groups)
+    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+    groupColors <- sample(bag_of_colors, nGroups)
     #group_colors <- viridis::viridis_pal(option = "D")(length(group_names))
   }
   #if(reverse_order){group_colors <- rev(group_colors)}
   #varNames_ordered <- colnames(mat_pctDiff)
   group_vec <- rep(NA, n_items)
   group_color_vec <- rep(NA, n_items)
-  for(i in 1:n_groups){
+  for(i in 1:nGroups){
     this_group_vec <- listGroups[[i]]
     this_group_name <- groupNames[i]
     this_group_color <- groupColors[i]
@@ -237,7 +238,7 @@ fitWave <- function(ts, per_vec, pval_thresh = 0.01, n_lookAhead){
 }
 #========================================================================
 plot_validation <- function(dfYhat, dfYpred, dfPlotTs, colorVec = NULL){
-  symbVec <- unique(dfTs$symbol)
+  symbVec <- unique(dfPlotTs$symbol)
   nTs <- ncol(dfYhat)
   if(is.null(colorVec)){
     bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
@@ -263,7 +264,7 @@ plot_validation <- function(dfYhat, dfYpred, dfPlotTs, colorVec = NULL){
     gg <- gg + scale_x_discrete(breaks = my_breaks)
     gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
     gg <- gg + labs(title = thisTitle)
-    gg <- gg + theme_bw()
+    gg <- gg + theme_dark()
     gg <- gg + theme(axis.title = element_blank(),
                      #legend.title = element_blank(),
                      legend.position = "none",
@@ -373,7 +374,7 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   gg <- gg + scale_x_discrete(breaks = my_breaks)
   gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
   gg <- gg + labs(title = thisTitle)
-  gg <- gg + theme_bw()
+  gg <- gg + theme_dark()
   gg <- gg + theme(axis.title = element_blank(),
                    axis.text.x = element_text(angle = 60, hjust = 1),
                    #legend.title = element_blank(),
@@ -489,8 +490,8 @@ groupNames <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Curren
                  "Emerging Markets", "Crypto", "T-Bonds")
 names(listGroups) <- groupNames
 nGroups <- length(listGroups)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
-groupColors <- sample(bag_of_colors, n_groups)
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+groupColors <- sample(bag_of_colors, nGroups)
 groupInfo <- list(listGroups, groupNames, groupColors)
 dfAvail <- data.frame(Ticker = ts_symb_vec, Name = ts_detail_vec)
 dfAvail$Sector <- NA;
@@ -508,8 +509,8 @@ fromdate <- Sys.Date() - 1000
 # https://app.tiingo.com/screener/overview
 #workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
 workFolder <- "/home/ben/Documents/finAnalysis/"
-#thisFile <-"soundFundmntls.csv"
-thisFile <-"LargeCap.csv"
+#thisFile <-"LargeCap.csv"
+thisFile <-"midCap.csv"
 thisFilepath <- paste0(workFolder, thisFile)
 #list.files(workFolder)
 dfThese <- read.csv(thisFilepath, stringsAsFactors = F) #Tiingo screener
@@ -521,11 +522,12 @@ dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
                                 exchange %in% theseExchngs & 
-                                endDate == (Sys.Date() - 1))
+                                endDate == (Sys.Date()))
 allStks <- unique(dfAvail$Ticker)
 length(allStks)
 #allStks <- allStks[-which(allStks == "AHL-P-C")]
-fromdate <- Sys.Date() - round(length(allStks) * 2)
+fromdate <- Sys.Date() - round(length(allStks) * 2.5)
+length(fromdate:Sys.Date())
 stkVec <- allStks
 #=============================================================================
 # Sort out sector info, especially for graphing purposes
@@ -540,9 +542,9 @@ for(i in 1:length(sctrVec)){
     subset(Sector == sctrVec[i]) %>% .$Ticker
 }
 groupNames <- sctrVec
-n_groups <- length(listGroups)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * n_groups)
-groupColors <- sample(bag_of_colors, n_groups)
+nGroups <- length(listGroups)
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+groupColors <- sample(bag_of_colors, nGroups)
 groupInfo <- list(listGroups, groupNames, groupColors)
 # outlist <- group_fn(groupInfo)
 # cols_ordered_by_group <- outlist[[1]]
@@ -552,7 +554,7 @@ groupInfo <- list(listGroups, groupNames, groupColors)
 # df_match_group <- data.frame(Item = cols_ordered_by_group, Group = group_vec_ordered)
 #=============================================================================
 # Download price series
-df_ohlcv  <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
+df_ohlcv <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
 length(unique(df_ohlcv$symbol))
 o <- apply(df_ohlcv, 2, function(x) sum(is.na(x))); o
 unique(df_ohlcv$symbol[which(is.na(df_ohlcv$low))])
@@ -575,20 +577,16 @@ dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = 2 * pctlOsc - 1) %>% # For signal forcast/validation to work pctlOsc has to straddle y=0
   as.data.frame()
 dfx <- dfStk[, c("symbol", "date", "pctlOsc")] %>% spread(symbol, pctlOsc)
-o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o;table(o)
-max(o);which(o == max(o))
-notThese <- c("ARKO", "TECX", "LTM")
+o <- apply(dfx, 2, function(x) sum(is.na(x))); table(o)
+notThese <- names(which(o >= rollWind))
 dfStk <- dfStk %>% subset(!(symbol %in% notThese))
 dfStk <- dfStk[-which(is.na(dfStk$pctlOsc)), c("symbol", "date", "pctlOsc")]
-o <- apply(dfStk, 2, function(x) length(which(is.na(x))));o
 #=============================================================================
-# df <- dfStk[, c("symbol", "date", "pctlOsc")]
-# o <- apply(df, 2, function(x) length(which(is.nan(x))));o
 df_pca <- dfStk %>% spread(symbol, pctlOsc)
-o <- apply(df_pca, 2, function(x) length(which(is.na(x))));o;table(o)
+apply(df_pca, 2, function(x) length(which(is.na(x)))) %>% table()
 mat_X_in <- as.matrix(df_pca[, -1]) %>% scale(scale = F)
 row.names(mat_X_in) <- df_pca$date
-o <- apply(mat_X_in, 2, function(x) length(which(is.na(x))));o;table(o)
+apply(mat_X_in, 2, function(x) length(which(is.na(x)))) %>% table()
 out <- get_S_and_corrXS(mat_X_in)
 matS <- out[[1]]
 mat_L <- out[[2]]
@@ -600,7 +598,7 @@ pctExplnd <- cumsum(eigVals) / sum(eigVals)
 cutOff1 <- which(pctExplnd >= 0.80)[1]
 #cutOff2 <- which(colMeans(abs(mat_Lrot)) > 0.15)
 cutOff2 <- which(eigVals / sum(eigVals) < 0.05)[1]
-cutOff <- min(max(cutOff1), max(cutOff2))
+cutOff <- min(max(cutOff1), max(cutOff2)); cutOff
 #cutOff <- 5
 pctExplndVec <- round(100 * eigVals[1:cutOff] / sum(eigVals), 2)
 mat_L <- mat_L[, 1:cutOff]
@@ -692,7 +690,7 @@ dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC"
 ##=========================================================================
 # After identifying PCs of interest based on validation and prediction of them all,
 # look at position/movement of highly correlated securities relative to selected PCs
-PCfocus <- c(3)
+PCfocus <- c(2)
 dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC", dfTs$symbol)
 dfTs <- dfTs %>% subset(symbol %in% paste("PC", PCfocus))
 dfTheseHiCor <- dfHiLcorStks[which(dfHiLcorStks$PC %in% PCfocus), c("Ticker", "PC")] %>%
@@ -807,14 +805,17 @@ symbValidScore <- dfYpredValid %>% mutate(date = dateVecValid) %>%
   gather_("symbol", "tsPredValid", symbVec) %>%
   merge(dfTs[, c("date", "symbol", "ts")]) %>%
   group_by(symbol) %>% mutate(x = (ts - tsPredValid)^2) %>%
-  summarise(sse = sum(x)) %>% subset(sse < quantile(sse, probs = 0.5)) %>%
+  summarise(sse = sum(x)) %>% subset(sse < quantile(sse, probs = 1)) %>%
   .$symbol;symbValidScore
-dfYhatValid <- dfYhatValid[, symbValidScore];dfYpredValid <- dfYpredValid[, symbValidScore]
-dfYhatPred <- dfYhatPred[, symbValidScore];dfYpredPred <- dfYpredPred[, symbValidScore]
-dfTs <- dfTs %>% subset(symbol %in% symbValidScore)
-nTs <- length(symbValidScore)
+dfYhatValidSel <- dfYhatValid[, symbValidScore];dfYpredValidSel <- dfYpredValid[, symbValidScore]
+dfYhatPredSel <- dfYhatPred[, symbValidScore];dfYpredPredSel <- dfYpredPred[, symbValidScore]
+dfTsSelect <- dfTs %>% subset(symbol %in% symbValidScore)
+nTsSelect <- length(symbValidScore)
 #------------------------------------------------------------
 # Backtest
+bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTsSelect)
+theseColors <- sample(bag_of_colors, nTsSelect)
+plot_validation(dfYhatValidSel, dfYpredValidSel, dfTsSelect, colorVec = theseColors)
 bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
 theseColors <- sample(bag_of_colors, nTs)
 plot_validation(dfYhatValid, dfYpredValid, dfTs, colorVec = theseColors)
@@ -823,6 +824,8 @@ plot_validation(dfYhatValid, dfYpredValid, dfTs, colorVec = theseColors)
 n_lookAhead_zoom <- n_lookAhead
 n_lookBack_zoom <- round(lookBack_fraction * nrow(df_wave))
 time_step <- "daily"
+plot_prediction(dfYhatPredSel, dfYpredPredSel, dfTsSelect, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom,
+                colorVec = theseColors, showCloseUp = F)
 plot_prediction(dfYhatPred, dfYpredPred, dfTs, time_step, n_lookAhead, n_lookAhead_zoom, n_lookBack_zoom,
                 colorVec = theseColors, showCloseUp = F)
 #------------------------------------------------------------
