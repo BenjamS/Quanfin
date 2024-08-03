@@ -161,7 +161,7 @@ group_fn <- function(groupInfo){
   nGroups <- length(groupNames)
   n_items <- length(varNames_ordered)
   if(is.null(groupColors)){
-    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+    bag_of_colors <- distinctColorPalette(k = 5 * nGroups)
     groupColors <- sample(bag_of_colors, nGroups)
     #group_colors <- viridis::viridis_pal(option = "D")(length(group_names))
   }
@@ -241,7 +241,7 @@ plot_validation <- function(dfYhat, dfYpred, dfPlotTs, colorVec = NULL){
   symbVec <- unique(dfPlotTs$symbol)
   nTs <- ncol(dfYhat)
   if(is.null(colorVec)){
-    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+    bag_of_colors <- distinctColorPalette(k = 5 * nTs)
     theseColors <- sample(bag_of_colors, nTs)
   }else{
     theseColors <- colorVec
@@ -255,21 +255,21 @@ plot_validation <- function(dfYhat, dfYpred, dfPlotTs, colorVec = NULL){
   dfPlotMod <- dfPlotMod %>% gather_("symbol", "tsMod", symbVec)
   #dfPlotMod$date_chr <- as.factor(dfPlotMod$date_chr)
   thisTitle <- "Model validation"
-    gg <- ggplot()
-    gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
-    gg <- gg + geom_vline(xintercept = ind_divide, lwd = 1, color = "blue")
-    gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = symbol, group = symbol))#, color = colors_dtFit[2], lwd = 1.1)
-    gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = symbol, group = symbol), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
-    gg <- gg + scale_color_manual(values = theseColors)
-    gg <- gg + scale_x_discrete(breaks = my_breaks)
-    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
-    gg <- gg + labs(title = thisTitle)
-    gg <- gg + theme_dark()
-    gg <- gg + theme(axis.title = element_blank(),
-                     #legend.title = element_blank(),
-                     legend.position = "none",
-                     axis.text.x = element_text(angle = 60, hjust = 1),
-                     plot.title = element_text(size = 10))
+  gg <- ggplot()
+  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", lwd = 1)
+  gg <- gg + geom_vline(xintercept = ind_divide, lwd = 1, color = "blue")
+  gg <- gg + geom_line(data = dfPlotTs, aes(x = date_chr, y = ts, color = symbol, group = symbol))#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = symbol, group = symbol), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
+  gg <- gg + scale_color_manual(values = theseColors)
+  gg <- gg + scale_x_discrete(breaks = my_breaks)
+  gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+  gg <- gg + labs(title = thisTitle)
+  gg <- gg + theme_dark()
+  gg <- gg + theme(axis.title = element_blank(),
+                   #legend.title = element_blank(),
+                   legend.position = "none",
+                   axis.text.x = element_text(angle = 60, hjust = 1),
+                   plot.title = element_text(size = 10))
   print(gg)
   # gg <- ggplot()
   # gg <- gg + geom_line(data = dfPlotMod, aes(x = date_chr, y = tsMod, color = Type, group = Type), lwd = 1.1)#, color = colors_dtFit[2], lwd = 1.1)
@@ -310,7 +310,7 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   symbVec <- unique(dfPlotTs$symbol)
   nTs <- ncol(dfYhat)
   if(is.null(colorVec)){
-    bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+    bag_of_colors <- distinctColorPalette(k = 5 * nTs)
     theseColors <- sample(bag_of_colors, nTs)
   }else{
     theseColors <- colorVec
@@ -385,34 +385,34 @@ plot_prediction <- function(dfYhat, dfYpred, dfPlotTs, time_step, n_lookAhead = 
   print(gg)
   
   if(showCloseUp){
-  # Zoom in
-  ind_end_new <- n_lookBack_zoom
-  dateChrZoomVec <- dateChrVec[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom)]
-  lenTsZoom <- length(dateChrZoomVec)
-  dfPlotModZoom <- dfPlotMod %>% mutate(date_chr = as.character(date_chr)) %>%
-    subset(date_chr %in% dateChrZoomVec)
-  dfPlotTsZoom <- dfPlotTs %>% subset(date_chr >= dateChrZoomVec[1])
-  my_breaks_zoom <- dateChrZoomVec[seq.int(1, lenTsZoom, length.out = 30)]
-  dfPlotModZoom <- dfPlotModZoom %>% spread(symbol, tsMod) %>%
-    mutate(date_chr = factor(date_chr, levels = dateChrZoomVec)) %>%
-    gather_("symbol", "tsMod", symbVec)
-  gg <- ggplot()
-  gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
-  gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
-  gg <- gg + geom_line(data = dfPlotModZoom, aes(x = date_chr, y = tsMod, group = symbol, color = symbol))#, color = colors_dtFit[1], lwd = 1.1)
-  gg <- gg + geom_line(data = dfPlotTsZoom, aes(x = date_chr, y = ts, group = symbol, color = symbol))#, color = colors_dtFit[2])
-  gg <- gg + scale_color_manual(values = theseColors)
-  gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
-  gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
-  gg <- gg + labs(title = paste(thisTitle, "close up"))
-  gg <- gg + theme_bw()
-  gg <- gg + theme(axis.title = element_blank(),
-                   axis.text.x = element_text(angle = 60, hjust = 1),
-                   legend.position = "none",
-                   axis.ticks.x = element_blank(),
-                   plot.title = element_text(size = 10))
-  
-  print(gg)
+    # Zoom in
+    ind_end_new <- n_lookBack_zoom
+    dateChrZoomVec <- dateChrVec[(ind_end - n_lookBack_zoom):(ind_end + n_lookAhead_zoom)]
+    lenTsZoom <- length(dateChrZoomVec)
+    dfPlotModZoom <- dfPlotMod %>% mutate(date_chr = as.character(date_chr)) %>%
+      subset(date_chr %in% dateChrZoomVec)
+    dfPlotTsZoom <- dfPlotTs %>% subset(date_chr >= dateChrZoomVec[1])
+    my_breaks_zoom <- dateChrZoomVec[seq.int(1, lenTsZoom, length.out = 30)]
+    dfPlotModZoom <- dfPlotModZoom %>% spread(symbol, tsMod) %>%
+      mutate(date_chr = factor(date_chr, levels = dateChrZoomVec)) %>%
+      gather_("symbol", "tsMod", symbVec)
+    gg <- ggplot()
+    gg <- gg + geom_hline(yintercept = c(-1, 0, 1), color = "red", size = 1)
+    gg <- gg + geom_vline(xintercept = ind_end_new, color = "blue", size = 1)
+    gg <- gg + geom_line(data = dfPlotModZoom, aes(x = date_chr, y = tsMod, group = symbol, color = symbol))#, color = colors_dtFit[1], lwd = 1.1)
+    gg <- gg + geom_line(data = dfPlotTsZoom, aes(x = date_chr, y = ts, group = symbol, color = symbol))#, color = colors_dtFit[2])
+    gg <- gg + scale_color_manual(values = theseColors)
+    gg <- gg + scale_x_discrete(breaks = my_breaks_zoom)
+    gg <- gg + facet_wrap(~symbol, ncol = 1, strip.position = "right")
+    gg <- gg + labs(title = paste(thisTitle, "close up"))
+    gg <- gg + theme_bw()
+    gg <- gg + theme(axis.title = element_blank(),
+                     axis.text.x = element_text(angle = 60, hjust = 1),
+                     legend.position = "none",
+                     axis.ticks.x = element_blank(),
+                     plot.title = element_text(size = 10))
+    
+    print(gg)
   }
   
   
@@ -457,40 +457,52 @@ getCycles <- function(waveAnalysis, plotPeriodogram = T){
 #=============================================================================
 # Manual global overview
 spy_sector_symbs <- c("XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
-                      "XLU", "XLI", "XBI", "IYT") #"TTEK"
+                      "XLU", "XLI", "XBI", "IYT", "XLE", "SPY", "IJR", "IJH", "URTH") #"TTEK"
 spy_sector_detail <- c("Financials", "Communications", "Luxury goods", "Consumer\ngoods",
                        "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
-                       "Biotechnology", "Transportation") #"Gov. foreign aid"
-minerals_symbs <- c("GLD", "SLV", "PPLT", "CPER", "DBB") #"XME"
-minerals_detail <- c("Gold", "Silver", "Platinum", "Copper", "Industrial metals") #"US metals and mining"
+                       "Biotechnology", "Transportation", "Energy", "S&P 500 ETF",
+                       "Small Cap ETF", "Mid Cap ETF", "Devd Mkts ETF") #"Gov. foreign aid"
+semicondctr_symbs <- c("TSM", "NVDA", "AVGO", "ASML", "AMD", "QCOM", "TXN",
+                       "AMAT", "ADI", "MU", "LRCX", "KLAC", "INTC")
+semicondctr_detail <- c("Taiwan Semiconductor Manufacturing Co. Ltd.",
+                 "Nvidia", "Broadcom", "ASML (Netherlands semicndctr firm)",
+                 "AMD", "Qualcomm", "Texas Instruments", "Applied Materials",
+                 "Analog Devices", "Micron Technology",
+                 "Lam Research", "KLA", "Intel")
+minerals_symbs <- c("GLD", "IAU", "SLV", "PPLT", "CPER", "DBB") #"XME"
+minerals_detail <- c("Gold a", "Gold b", "Silver", "Platinum", "Copper", "Industrial metals") #"US metals and mining"
 agriculture_symbs <- c("WEAT", "CORN", "KROP", "SOYB", "CANE", "DBA", "TAGS")
-agriculture_detail <- c("Wheat", "Maize", "AgTech", "Soybean", "Sugar", "General Ag 1", "General Ag 2")
-energy_symbs <- c("WTI", "BNO", "WOOD", "ICLN", "UNG")
-energy_detail <- c("Oil (W&T)", "Oil (Brent)", "Timber", "Clean energy", "US natural gas")
+agriculture_detail <- c("Wheat", "Maize", "AgTech", "Soybean", "Sugar", "General Ag a", "General Ag b")
+energy_symbs <- c("WTI", "BNO", "USO", "WOOD", "ICLN", "UNG")
+energy_detail <- c("Oil (W&T)", "Oil (Brent)", "Oil (US ETF)", "Timber", "Clean energy", "US natural gas")
 currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
-currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
-# currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
-#                     "GBPUSD=X", "AUDUSD=X", "INR=X")
-# currency_detail <- c("EUR/USD", "USD/JPY",
-#                      "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
-emerg_mkt_symbs <- c("ELD", "BKF", "VWOB")
-emerg_mkt_detail <- c("Emerg mkts debt", "BRIC countries", "Emerg mkts gov. bonds")
-crypto_symbs <- c("BLOK", "LEGR", "BITQ")
-crypto_detail <- c("Blockchain tech.", "Blockchain companies", "Crypto Industry Innovators")
+# currency_detail <- c("Emerging mkt currencies", "USD", "EUR", "JPY", "CHF", "CND", "GBP", "AUD")
+currency_detail <- c("EUR/USD", "USD/JPY",
+                     "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
+currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
+                     "GBPUSD=X", "AUDUSD=X", "INR=X")
+emerg_mkt_symbs <- c("ELD", "BKF", "VWOB", "FXI")
+emerg_mkt_detail <- c("Emerg mkts debt", "BRIC countries", "Emerg mkts gov. bonds", "China ETF")
+crypto_symbs <- c("BLOK", "LEGR", "BITQ", "BTC=F")
+crypto_detail <- c("Blockchain tech.", "Blockchain companies",
+                   "Crypto Industry Innovators", "Bitcoin futures")
 Tbond_symbs <- c("IEI", "IEF", "TLT")#, "BIL"
 Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs") #"T-bond 1-3 months"
 
 ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
-                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs,
+                 semicondctr_symbs)
 ts_detail_vec <- c(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
-                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail,
+                   semicondctr_detail)
 listGroups <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
-                     currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+                   currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs,
+                   semicondctr_symbs)
 groupNames <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currencies",
-                 "Emerging Markets", "Crypto", "T-Bonds")
+                "Emerging Markets", "Crypto", "T-Bonds", "Semiconductors")
 names(listGroups) <- groupNames
 nGroups <- length(listGroups)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+bag_of_colors <- distinctColorPalette(k = 5 * nGroups)
 groupColors <- sample(bag_of_colors, nGroups)
 groupInfo <- list(listGroups, groupNames, groupColors)
 dfAvail <- data.frame(Ticker = ts_symb_vec, Name = ts_detail_vec)
@@ -504,7 +516,7 @@ fromdate <- Sys.Date() - 1000
 #=============================================================================
 #=============================================================================
 #=============================================================================
-# Or use stock scanner
+# Or use stocks from stock screener
 # Tiingo has good free stock screener with option to export to csv:
 # https://app.tiingo.com/screener/overview
 #workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
@@ -543,7 +555,7 @@ for(i in 1:length(sctrVec)){
 }
 groupNames <- sctrVec
 nGroups <- length(listGroups)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nGroups)
+bag_of_colors <- distinctColorPalette(k = 5 * nGroups)
 groupColors <- sample(bag_of_colors, nGroups)
 groupInfo <- list(listGroups, groupNames, groupColors)
 # outlist <- group_fn(groupInfo)
@@ -556,11 +568,17 @@ groupInfo <- list(listGroups, groupNames, groupColors)
 # Download price series
 df_ohlcv <- stkVec %>% tq_get(get = "stock.prices", from = fromdate) %>% as.data.frame()
 length(unique(df_ohlcv$symbol))
-o <- apply(df_ohlcv, 2, function(x) sum(is.na(x))); o
+o <- apply(df_ohlcv, 2, function(x) sum(is.na(x))); o; table(o)
 unique(df_ohlcv$symbol[which(is.na(df_ohlcv$low))])
 df_ohlcv$p <- df_ohlcv$adjusted
-# dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
-# o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o
+#df_ohlcv[c(28305, 28306), ]
+df_ohlcv <- df_ohlcv %>% group_by(symbol) %>%
+  mutate(dup = duplicated(date)) %>% subset(dup == F)
+dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
+o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o; table(o)
+dfx[, -1] <- na.spline(dfx[, -1]) %>% as.data.frame()
+gathercols <- colnames(dfx)[-1]
+df_ohlcv <- dfx %>% gather_("symbol", "p", gathercols)
 #df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
 #dfStk <- df_ohlcv[, c("symbol", "date", "p", "volume", "diffHiLo")]
 #o <- apply(df_ohlcv, 2, function(x) length(which(is.na(x)))); o
@@ -571,7 +589,7 @@ df_ohlcv$p <- df_ohlcv$adjusted
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 89
+rollWind <- 55
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
   mutate(pctlOsc = 2 * pctlOsc - 1) %>% # For signal forcast/validation to work pctlOsc has to straddle y=0
@@ -612,7 +630,7 @@ listDrivers <- list()
 for(i in 1:cutOff){
   theseCorrs <- abs(mat_Lrot[, i])
   #ind <- which(theseCorrs > 0.6)
-  ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.98))
+  ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.95))
   #dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx <- dfAvail[, c("Ticker", "Name", "Sector")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
@@ -623,6 +641,7 @@ dfHiLcorStks$PC <- as.integer(dfHiLcorStks$PC)
 #matSadj <- (mat_X_in %*% matP[, 1:cutOff] %*% diag(1 / sqrt(eigVals[1:cutOff]))) * 1 / 2
 #dfS <- matSadj %>% as.data.frame()
 dfS <- matS[, 1:cutOff] %>% as.data.frame()
+#dfS$V3 <- -dfS$V3
 dfS$date <- df_pca$date
 dfS <- dfS %>% gather_("PC", "pctlOsc", colnames(dfS)[-ncol(dfS)])
 dfS$PC <- as.integer(gsub("V", "", dfS$PC))
@@ -631,7 +650,7 @@ listGg <- list()
 for(i in 1:cutOff){
   theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == i)]
   nStks <- length(theseHiCor)
-  bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nStks)
+  bag_of_colors <- distinctColorPalette(k = 5 * nStks)
   theseColors <- sample(bag_of_colors, nStks)
   dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ticker", "pctlOsc", theseHiCor)
   dfPlotS <- dfS %>% subset(PC == i)
@@ -690,7 +709,7 @@ dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC"
 ##=========================================================================
 # After identifying PCs of interest based on validation and prediction of them all,
 # look at position/movement of highly correlated securities relative to selected PCs
-PCfocus <- c(2)
+PCfocus <- c(5)
 dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC", dfTs$symbol)
 dfTs <- dfTs %>% subset(symbol %in% paste("PC", PCfocus))
 dfTheseHiCor <- dfHiLcorStks[which(dfHiLcorStks$PC %in% PCfocus), c("Ticker", "PC")] %>%
@@ -699,10 +718,10 @@ theseHiCor <- dfTheseHiCor$symbol
 dfTsAdd <- df_pca[, c("date", theseHiCor)]
 if(length(theseHiCor) > 1){
   dfTsAdd <- dfTsAdd %>% gather_("symbol", "ts", theseHiCor)
-  }else{
-    dfTsAdd$symbol <- theseHiCor; colnames(dfTsAdd)[2] <- "ts"
-    dfTsAdd <- dfTsAdd[, c("date", "symbol", "ts")]
-  }
+}else{
+  dfTsAdd$symbol <- theseHiCor; colnames(dfTsAdd)[2] <- "ts"
+  dfTsAdd <- dfTsAdd[, c("date", "symbol", "ts")]
+}
 dfTsAdd <- dfTsAdd %>% merge(dfTheseHiCor) %>% rename(CorrWithPC = PC)
 dfTs$CorrWithPC <- gsub("PC ", "", dfTs$symbol) %>% as.integer()
 dfTs <- dfTs %>% rbind(dfTsAdd) %>% as.data.frame()
@@ -788,7 +807,7 @@ for(i in 1:nTs){
   #kable(round(xtable(summod), 4)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
   listYhatPred[[i]] <- yhat_pred
   listYpredPred[[i]] <- ypredict_pred
-
+  
 }
 #------------------------------------------------------------
 dfYhatValid <- as.data.frame(do.call(cbind, listYhatValid))
@@ -813,10 +832,10 @@ dfTsSelect <- dfTs %>% subset(symbol %in% symbValidScore)
 nTsSelect <- length(symbValidScore)
 #------------------------------------------------------------
 # Backtest
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTsSelect)
+bag_of_colors <- distinctColorPalette(k = 5 * nTsSelect)
 theseColors <- sample(bag_of_colors, nTsSelect)
 plot_validation(dfYhatValidSel, dfYpredValidSel, dfTsSelect, colorVec = theseColors)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nTs)
+bag_of_colors <- distinctColorPalette(k = 5 * nTs)
 theseColors <- sample(bag_of_colors, nTs)
 plot_validation(dfYhatValid, dfYpredValid, dfTs, colorVec = theseColors)
 #------------------------------------------------------------
@@ -896,7 +915,7 @@ gg
 #
 theseHiCor <- dfHiLcorStks$Ticker[which(dfHiLcorStks$PC == thisPC)]
 nStks <- length(theseHiCor)
-bag_of_colors <- randomcoloR::distinctColorPalette(k = 5 * nStks)
+bag_of_colors <- distinctColorPalette(k = 5 * nStks)
 theseColors <- sample(bag_of_colors, nStks)
 dfTracks <- df_pca[, c("date", theseHiCor)] %>% gather_("ts", "val", theseHiCor)
 gg <- ggplot()
