@@ -455,6 +455,9 @@ getCycles <- function(waveAnalysis, plotPeriodogram = T){
 # End function definition
 #=============================================================================
 #=============================================================================
+dfDrivers <- NULL
+#=============================================================================
+#=============================================================================
 # Manual global overview
 spy_sector_symbs <- c("XLF", "XLC", "XLY", "XLP", "XLV", "XLK", "RWR",
                       "XLU", "XLI", "XBI", "IYT", "XLE", "SPY", "IJR", "IJH", "URTH") #"TTEK"
@@ -462,13 +465,13 @@ spy_sector_detail <- c("Financials", "Communications", "Luxury goods", "Consumer
                        "Healthcare", "Technology", "Real estate", "Utilities", "Industrial",
                        "Biotechnology", "Transportation", "Energy", "S&P 500 ETF",
                        "Small Cap ETF", "Mid Cap ETF", "Devd Mkts ETF") #"Gov. foreign aid"
-semicondctr_symbs <- c("TSM", "NVDA", "AVGO", "ASML", "AMD", "QCOM", "TXN",
-                       "AMAT", "ADI", "MU", "LRCX", "KLAC", "INTC")
-semicondctr_detail <- c("Taiwan Semiconductor Manufacturing Co. Ltd.",
-                 "Nvidia", "Broadcom", "ASML (Netherlands semicndctr firm)",
-                 "AMD", "Qualcomm", "Texas Instruments", "Applied Materials",
-                 "Analog Devices", "Micron Technology",
-                 "Lam Research", "KLA", "Intel")
+# semicondctr_symbs <- c("TSM", "NVDA", "AVGO", "ASML", "AMD", "QCOM", "TXN",
+#                        "AMAT", "ADI", "MU", "LRCX", "KLAC", "INTC")
+# semicondctr_detail <- c("Taiwan Semiconductor Manufacturing Co. Ltd.",
+#                         "Nvidia", "Broadcom", "ASML (Netherlands semicndctr firm)",
+#                         "AMD", "Qualcomm", "Texas Instruments", "Applied Materials",
+#                         "Analog Devices", "Micron Technology",
+#                         "Lam Research", "KLA", "Intel")
 minerals_symbs <- c("GLD", "IAU", "SLV", "PPLT", "CPER", "DBB") #"XME"
 minerals_detail <- c("Gold a", "Gold b", "Silver", "Platinum", "Copper", "Industrial metals") #"US metals and mining"
 agriculture_symbs <- c("WEAT", "CORN", "KROP", "SOYB", "CANE", "DBA", "TAGS")
@@ -480,37 +483,34 @@ currency_symbs <- c("EMLC", "UUP", "FXE", "FXY", "FXF", "FXC", "FXB", "FXA")
 currency_detail <- c("EUR/USD", "USD/JPY",
                      "USD/CHF", "USD/CAD", "GBP/USD", "AUD/USD", "USD/INR")
 currency_symbs <- c("EURUSD=X", "JPY=X", "CHF=X", "CAD=X",
-                     "GBPUSD=X", "AUDUSD=X", "INR=X")
+                    "GBPUSD=X", "AUDUSD=X", "INR=X")
 emerg_mkt_symbs <- c("ELD", "BKF", "VWOB", "FXI")
 emerg_mkt_detail <- c("Emerg mkts debt", "BRIC countries", "Emerg mkts gov. bonds", "China ETF")
 crypto_symbs <- c("BLOK", "LEGR", "BITQ", "BTC=F")
 crypto_detail <- c("Blockchain tech.", "Blockchain companies",
                    "Crypto Industry Innovators", "Bitcoin futures")
-Tbond_symbs <- c("IEI", "IEF", "TLT")#, "BIL"
-Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 20+ yrs") #"T-bond 1-3 months"
+Tbond_symbs <- c("IEI", "IEF", "BIL")#"TLT")
+Tbond_detail <- c("T-bond 3-7 yrs", "T-bond 7-10 yrs", "T-bond 1-3 months")#"T-bond 20+ yrs")
 
 ts_symb_vec <- c(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
-                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs,
-                 semicondctr_symbs)
+                 currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
 ts_detail_vec <- c(spy_sector_detail, minerals_detail, agriculture_detail, energy_detail,
-                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail,
-                   semicondctr_detail)
-listGroups <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
-                   currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs,
-                   semicondctr_symbs)
-groupNames <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currencies",
-                "Emerging Markets", "Crypto", "T-Bonds", "Semiconductors")
-names(listGroups) <- groupNames
-nGroups <- length(listGroups)
-bag_of_colors <- distinctColorPalette(k = 5 * nGroups)
-groupColors <- sample(bag_of_colors, nGroups)
-groupInfo <- list(listGroups, groupNames, groupColors)
-dfAvail <- data.frame(Ticker = ts_symb_vec, Name = ts_detail_vec)
-dfAvail$Sector <- NA;
-for(i in 1:nGroups){
-  dfAvail$Sector[which(dfAvail$Ticker %in% listGroups[[i]])] <- names(listGroups)[i]
+                   currency_detail, emerg_mkt_detail, crypto_detail, Tbond_detail)
+listGroupsDrivers <- list(spy_sector_symbs, minerals_symbs, agriculture_symbs, energy_symbs,
+                          currency_symbs, emerg_mkt_symbs, crypto_symbs, Tbond_symbs)
+groupNamesDrivers <- c("US Sectors", "Minerals", "Agriculture", "Energy", "Major Currencies",
+                       "Emerging Markets", "Crypto", "T-Bonds")
+names(listGroupsDrivers) <- groupNamesDrivers
+nGroupsDrivers <- length(listGroupsDrivers)
+bag_of_colors <- distinctColorPalette(k = 5 * nGroupsDrivers)
+groupColorsDrivers <- sample(bag_of_colors, nGroupsDrivers)
+groupInfoDrivers <- list(listGroupsDrivers, groupNamesDrivers, groupColorsDrivers)
+dfDrivers <- data.frame(Ticker = ts_symb_vec, Name = ts_detail_vec)
+dfDrivers$Sector <- NA;
+for(i in 1:nGroupsDrivers){
+  dfDrivers$Sector[which(dfDrivers$Ticker %in% listGroupsDrivers[[i]])] <- names(listGroupsDrivers)[i]
 }
-stkVec <- dfAvail$Ticker
+driversVec <- dfDrivers$Ticker
 fromdate <- Sys.Date() - 1000
 #=============================================================================
 #=============================================================================
@@ -521,8 +521,8 @@ fromdate <- Sys.Date() - 1000
 # https://app.tiingo.com/screener/overview
 #workFolder <- "D:/OneDrive - CGIAR/Documents 1/Personal stuff/quanFin/"
 workFolder <- "/home/ben/Documents/finAnalysis/"
-#thisFile <-"LargeCap.csv"
-thisFile <-"midCap.csv"
+thisFile <-"LargeCap.csv"
+#thisFile <-"midCap.csv"
 thisFilepath <- paste0(workFolder, thisFile)
 #list.files(workFolder)
 dfThese <- read.csv(thisFilepath, stringsAsFactors = F) #Tiingo screener
@@ -538,7 +538,7 @@ dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
 allStks <- unique(dfAvail$Ticker)
 length(allStks)
 #allStks <- allStks[-which(allStks == "AHL-P-C")]
-fromdate <- Sys.Date() - round(length(allStks) * 2.5)
+fromdate <- Sys.Date() - round(length(allStks) * 2)
 length(fromdate:Sys.Date())
 stkVec <- allStks
 #=============================================================================
@@ -558,6 +558,23 @@ nGroups <- length(listGroups)
 bag_of_colors <- distinctColorPalette(k = 5 * nGroups)
 groupColors <- sample(bag_of_colors, nGroups)
 groupInfo <- list(listGroups, groupNames, groupColors)
+#----------------------------------------------------------------------------
+# Add in drivers
+colnames(dfAvail)
+colnames(dfDrivers)
+dfDrivers <- dfDrivers %>% mutate(exchange = NA,
+                                  assetType = NA,
+                                  priceCurrency = NA,
+                                  startDate = NA,
+                                  endDate = NA,
+                                  Market.Cap = NA,
+                                  Industry = NA,
+                                  `X2.Year.Beta.to.S.P500` = NA,
+                                  `P.E.Ratio` = NA,
+                                  `Debt.Equity..D.E..Ratio` = NA)
+dfDrivers <- dfDrivers[, colnames(dfAvail)]
+dfAvail <- rbind(dfAvail, dfDrivers) %>% as.data.frame()
+stkVec <- dfAvail$Ticker %>% unique()
 # outlist <- group_fn(groupInfo)
 # cols_ordered_by_group <- outlist[[1]]
 # group_color_vec <- outlist[[2]]
@@ -576,7 +593,9 @@ df_ohlcv <- df_ohlcv %>% group_by(symbol) %>%
   mutate(dup = duplicated(date)) %>% subset(dup == F)
 dfx <- df_ohlcv[, c("symbol", "date", "p")] %>% spread(symbol, p)
 o <- apply(dfx, 2, function(x) length(which(is.na(x)))); o; table(o)
+which(o == max(o))
 dfx[, -1] <- na.spline(dfx[, -1]) %>% as.data.frame()
+dfx$LTM <- NULL
 gathercols <- colnames(dfx)[-1]
 df_ohlcv <- dfx %>% gather_("symbol", "p", gathercols)
 #df_ohlcv$diffHiLo <- df_ohlcv$high - df_ohlcv$low
@@ -630,7 +649,7 @@ listDrivers <- list()
 for(i in 1:cutOff){
   theseCorrs <- abs(mat_Lrot[, i])
   #ind <- which(theseCorrs > 0.6)
-  ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.95))
+  ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.98))
   #dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx <- dfAvail[, c("Ticker", "Name", "Sector")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
