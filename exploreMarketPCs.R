@@ -534,7 +534,7 @@ dfAvail <- dfAvailRaw %>% merge(dfThese)
 theseExchngs <- c("NYSE", "NASDAQ", "AMEX")
 dfAvail <- dfAvail %>% subset(startDate < "2019-01-01" &
                                 exchange %in% theseExchngs & 
-                                endDate == (Sys.Date()))
+                                endDate == (Sys.Date() - 1))
 allStks <- unique(dfAvail$Ticker)
 length(allStks)
 #allStks <- allStks[-which(allStks == "AHL-P-C")]
@@ -608,7 +608,7 @@ df_ohlcv <- dfx %>% gather_("symbol", "p", gathercols)
 #=============================================================================
 # Get percentile oscillator series
 dfStk <- df_ohlcv[, c("symbol", "date", "p")]
-rollWind <- 55
+rollWind <- 89
 dfStk <- dfStk %>% group_by(symbol) %>%
   mutate(pctlOsc = rollapply(p, rollWind, pctileFun, fill = NA, align = "right")) %>%
   mutate(pctlOsc = 2 * pctlOsc - 1) %>% # For signal forcast/validation to work pctlOsc has to straddle y=0
@@ -636,23 +636,23 @@ cutOff1 <- which(pctExplnd >= 0.80)[1]
 #cutOff2 <- which(colMeans(abs(mat_Lrot)) > 0.15)
 cutOff2 <- which(eigVals / sum(eigVals) < 0.05)[1]
 cutOff <- min(max(cutOff1), max(cutOff2)); cutOff
-#cutOff <- 5
+cutOff <- 10
 pctExplndVec <- round(100 * eigVals[1:cutOff] / sum(eigVals), 2)
-mat_L <- mat_L[, 1:cutOff]
-mat_Lrot <- mat_Lrot[, 1:cutOff]
+matL <- mat_L[, 1:cutOff]
+matLrot <- mat_Lrot[, 1:cutOff]
 sigNames <- paste0("PC ", 1:cutOff, "\n", pctExplndVec)
-plot_corrXS_barchart(mat_Lrot, groupInfo, xAxis_title, sigNames)
+plot_corrXS_barchart(matLrot, groupInfo, xAxis_title, sigNames)
 #==========================================================================
 # Plot signals (PCs) in time domain together with highest correlated stocks
-stkSymbs <- row.names(mat_Lrot)
+stkSymbs <- row.names(matLrot)
 listDrivers <- list()
 for(i in 1:cutOff){
-  theseCorrs <- abs(mat_Lrot[, i])
+  theseCorrs <- abs(matLrot[, i])
   #ind <- which(theseCorrs > 0.6)
   ind <- which(theseCorrs > quantile(theseCorrs, probs = 0.98))
   #dfx <- dfAvail[, c("Ticker", "Name", "Sector", "Industry", "Market.Cap", "exchange")] %>% subset(Ticker %in% stkSymbs[ind])
   dfx <- dfAvail[, c("Ticker", "Name", "Sector")] %>% subset(Ticker %in% stkSymbs[ind])
-  dfx$PC <- i; dfx$Lcorr <- mat_Lrot[ind, i]
+  dfx$PC <- i; dfx$Lcorr <- matLrot[ind, i]
   listDrivers[[i]] <- dfx
 }
 dfHiLcorStks <- as.data.frame(do.call(rbind, listDrivers)) %>% subset(abs(Lcorr) > 0.5) #merge(dfAvail) %>%
@@ -728,7 +728,7 @@ dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC"
 ##=========================================================================
 # After identifying PCs of interest based on validation and prediction of them all,
 # look at position/movement of highly correlated securities relative to selected PCs
-PCfocus <- c(5)
+PCfocus <- c(10)
 dfTs <- dfS; colnames(dfTs)[2:3] <- c("symbol", "ts"); dfTs$symbol <- paste("PC", dfTs$symbol)
 dfTs <- dfTs %>% subset(symbol %in% paste("PC", PCfocus))
 dfTheseHiCor <- dfHiLcorStks[which(dfHiLcorStks$PC %in% PCfocus), c("Ticker", "PC")] %>%
